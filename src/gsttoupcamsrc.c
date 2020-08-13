@@ -210,20 +210,30 @@ gst_toupcam_src_set_property (GObject * object, guint property_id,
     case PROP_CAMERAPRESENT:
         src->cameraPresent = g_value_get_boolean (value);
         break;
-    case PROP_HFLIP: {
-        printf("set hflip\n");
-        //Toupcam_put_HFlip(src->hCam, g_value_get_boolean (value));
+    case PROP_HFLIP:
         src->hflip = g_value_get_boolean (value);
         break;
-    }
-    case PROP_VFLIP: {
-        //Toupcam_put_VFlip(src->hCam, g_value_get_boolean (value));
+    case PROP_VFLIP:
         src->vflip = g_value_get_boolean (value);
         break;
-    }
-    case PROP_AUTO_EXPOSURE: {
+    case PROP_AUTO_EXPOSURE:
         src->auto_exposure = g_value_get_boolean (value);
-    }
+        break;
+    case PROP_HUE:
+        src->hue = g_value_get_int (value);
+        break;
+    case PROP_SATURATION:
+        src->saturation = g_value_get_int (value);
+        break;
+    case PROP_BRIGHTNESS:
+        src->brightness = g_value_get_int (value);
+        break;
+    case PROP_CONTRAST:
+        src->contrast = g_value_get_int (value);
+        break;
+    case PROP_GAMMA:
+        src->gamma = g_value_get_int (value);
+        break;
     default:
         G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
         break;
@@ -243,28 +253,32 @@ gst_toupcam_src_get_property (GObject * object, guint property_id,
     case PROP_CAMERAPRESENT:
         g_value_set_boolean (value, src->cameraPresent);
         break;
-    case PROP_HFLIP: {
-        /*
-        int bHFlip;
-        Toupcam_get_HFlip(src->hCam, &bHFlip);
-        g_value_set_boolean (value, bHFlip);
-        */
+    case PROP_HFLIP: 
         g_value_set_boolean (value, src->hflip);
         break;
-    }
-    case PROP_VFLIP: {
-        /*
-        int bVFlip;
-        Toupcam_get_VFlip(src->hCam, &bVFlip);
-        g_value_set_boolean (value, bVFlip);
-        */
+    case PROP_VFLIP:
         g_value_set_boolean (value, src->vflip);
         break;
-    }
-    case PROP_AUTO_EXPOSURE: {
+    case PROP_AUTO_EXPOSURE:
         g_value_set_boolean (value, src->auto_exposure);
         break;
-    }
+
+    case PROP_HUE:
+        g_value_set_int (value, src->hue);
+        break;
+    case PROP_SATURATION:
+        g_value_set_int (value, src->saturation);
+        break;
+    case PROP_BRIGHTNESS:
+        g_value_set_int (value, src->brightness);
+        break;
+    case PROP_CONTRAST:
+        g_value_set_int (value, src->contrast);
+        break;
+    case PROP_GAMMA:
+        g_value_set_int (value, src->gamma);
+        break;
+
     default:
         G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
         break;

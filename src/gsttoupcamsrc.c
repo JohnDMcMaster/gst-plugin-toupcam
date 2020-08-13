@@ -17,7 +17,6 @@
  * </refsect2>
  */
 
-
 #include <unistd.h> // for usleep
 #include <string.h> // for memcpy
 
@@ -267,6 +266,9 @@ gst_toupcam_src_start (GstBaseSrc * bsrc)
     }
 
     // Colour format
+
+    //0->RGB, 1->BGR
+    Toupcam_put_Option(src->hCam, TOUPCAM_OPTION_BYTEORDER, 1);
 
     // We support just colour of one type, BGR 24-bit, I am not attempting to support all camera types
     src->nBitsPerPixel = 24;

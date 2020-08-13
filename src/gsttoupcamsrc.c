@@ -128,7 +128,7 @@ gst_toupcam_src_init (GstToupCamSrc * src)
     gst_base_src_set_format (GST_BASE_SRC (src), GST_FORMAT_TIME);
 
     g_mutex_init(&src->mutex);
-	g_cond_init(&src->cond);
+        g_cond_init(&src->cond);
     gst_toupcam_src_reset (src);
 }
 
@@ -263,7 +263,7 @@ gst_toupcam_src_start (GstBaseSrc * bsrc)
     hr = Toupcam_StartPullModeWithCallback(src->hCam, EventCallback, src);
     if (FAILED(hr)) {
         GST_ERROR_OBJECT (src, "failed to start camera, hr = %08x", hr);
-	goto fail;
+        goto fail;
     }
 
     // Colour format
@@ -391,26 +391,26 @@ gst_toupcam_src_fill (GstPushSrc * psrc, GstBuffer * buf)
     // format and unlock it again, so that grabbing can go on
 
     // Wait for the next image to be ready
-	int timeout = 5;
-	unsigned startImages = src->imagesAvailable;
-	while (startImages >= src->imagesAvailable) {
-		gint64 end_time;
-		g_mutex_lock(&src->mutex);
-		end_time = g_get_monotonic_time () + G_TIME_SPAN_SECOND;
-		if (!g_cond_wait_until(&src->cond, &src->mutex, end_time)) {
-			// timeout has passed.
-			//g_mutex_unlock (&src->mutex); // return here if needed
-			//return NULL;
-		}
-		g_mutex_unlock (&src->mutex);
-		timeout--;
-		if (timeout <= 0) {
+        int timeout = 5;
+        unsigned startImages = src->imagesAvailable;
+        while (startImages >= src->imagesAvailable) {
+                gint64 end_time;
+                g_mutex_lock(&src->mutex);
+                end_time = g_get_monotonic_time () + G_TIME_SPAN_SECOND;
+                if (!g_cond_wait_until(&src->cond, &src->mutex, end_time)) {
+                        // timeout has passed.
+                        //g_mutex_unlock (&src->mutex); // return here if needed
+                        //return NULL;
+                }
+                g_mutex_unlock (&src->mutex);
+                timeout--;
+                if (timeout <= 0) {
             // did not return an image. why?
             // ----------------------------------------------------------
             GST_ERROR_OBJECT(src, "WaitEvent timed out.");
             return GST_FLOW_ERROR;
-		}
-	}
+                }
+        }
 
     //  successfully returned an image
     // ----------------------------------------------------------

@@ -45,6 +45,11 @@ struct _GstToupCamSrc
   gboolean hflip;
   gboolean vflip;
   gboolean auto_exposure;
+  gint hue;
+  gint saturation;
+  gint brightness;
+  gint contrast;
+  gint gamma;
 
   // stream
   gboolean acq_started;

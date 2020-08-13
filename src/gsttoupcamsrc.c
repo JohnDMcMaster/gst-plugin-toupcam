@@ -1,6 +1,7 @@
 /* GStreamer ToupCam Plugin
  * Copyright (C) 2020 
  *
+ * Author John McMaster <johndmcmaster@gmail.com>
  * Author Kishore Arepalli <kishore.arepalli@gmail.com>
  */
 /**
@@ -61,6 +62,11 @@ enum
     PROP_HFLIP,
     PROP_VFLIP,
     PROP_AUTO_EXPOSURE,
+    PROP_HUE,
+    PROP_SATURATION,
+    PROP_BRIGHTNESS,
+    PROP_CONTRAST,
+    PROP_GAMMA,
 };
 
 #define PROP_CAMERAPRESENT       FALSE
@@ -74,6 +80,11 @@ enum
 #define DEFAULT_PROP_AUTO_EXPOSURE		TRUE
 #define DEFAULT_PROP_HFLIP		        FALSE
 #define DEFAULT_PROP_VFLIP		        FALSE
+#define DEFAULT_PROP_HUE                TOUPCAM_HUE_DEF
+#define DEFAULT_PROP_SATURATION         TOUPCAM_SATURATION_DEF
+#define DEFAULT_PROP_BRIGHTNESS         TOUPCAM_BRIGHTNESS_DEF
+#define DEFAULT_PROP_CONTRAST           TOUPCAM_CONTRAST_DEF
+#define DEFAULT_PROP_GAMMA              TOUPCAM_GAMMA_DEF
 
 
 // pad template
@@ -110,7 +121,7 @@ gst_toupcam_src_class_init (GstToupCamSrcClass * klass)
 
     gst_element_class_set_static_metadata (gstelement_class,
             "ToupCam Video Source", "Source/Video",
-            "ToupCam Camera video source", "Kishore Arepalli <kishore.arepalli@gmail.com>");
+            "ToupCam Camera video source", "John McMaster <johndmcmaster@gmail.com>");
 
     gstbasesrc_class->start = GST_DEBUG_FUNCPTR (gst_toupcam_src_start);
     gstbasesrc_class->stop = GST_DEBUG_FUNCPTR (gst_toupcam_src_stop);
@@ -135,6 +146,22 @@ gst_toupcam_src_class_init (GstToupCamSrcClass * klass)
     g_object_class_install_property (gobject_class, PROP_AUTO_EXPOSURE,
             g_param_spec_boolean ("auto_exposure", "Auto exposure", "Auto exposure",
                     DEFAULT_PROP_AUTO_EXPOSURE, G_PARAM_READABLE | G_PARAM_WRITABLE));
+
+    g_object_class_install_property (gobject_class, PROP_HUE,
+            g_param_spec_int ("hue", "...", "...",
+                    TOUPCAM_HUE_MIN, TOUPCAM_HUE_MAX, TOUPCAM_HUE_DEF, G_PARAM_READABLE | G_PARAM_WRITABLE));
+    g_object_class_install_property (gobject_class, PROP_SATURATION,
+            g_param_spec_int ("saturation", "...", "...",
+                    TOUPCAM_SATURATION_MIN, TOUPCAM_SATURATION_MAX, TOUPCAM_SATURATION_DEF, G_PARAM_READABLE | G_PARAM_WRITABLE));
+    g_object_class_install_property (gobject_class, PROP_BRIGHTNESS,
+            g_param_spec_int ("brightness", "...", "...",
+                    TOUPCAM_BRIGHTNESS_MIN, TOUPCAM_BRIGHTNESS_MAX, TOUPCAM_BRIGHTNESS_DEF, G_PARAM_READABLE | G_PARAM_WRITABLE));
+    g_object_class_install_property (gobject_class, PROP_CONTRAST,
+            g_param_spec_int ("contrast", "...", "...",
+                    TOUPCAM_CONTRAST_MIN, TOUPCAM_CONTRAST_MAX, TOUPCAM_CONTRAST_DEF, G_PARAM_READABLE | G_PARAM_WRITABLE));
+    g_object_class_install_property (gobject_class, PROP_GAMMA,
+            g_param_spec_int ("gamma", "...", "...",
+                    TOUPCAM_GAMMA_MIN, TOUPCAM_GAMMA_MAX, TOUPCAM_GAMMA_DEF, G_PARAM_READABLE | G_PARAM_WRITABLE));
 }
 
 static void
@@ -143,6 +170,11 @@ gst_toupcam_src_init (GstToupCamSrc * src)
     src->auto_exposure = DEFAULT_PROP_AUTO_EXPOSURE;
     src->vflip = DEFAULT_PROP_VFLIP;
     src->hflip = DEFAULT_PROP_HFLIP;
+    src->hue = DEFAULT_PROP_HUE;
+    src->saturation = DEFAULT_PROP_SATURATION;
+    src->brightness = DEFAULT_PROP_BRIGHTNESS;
+    src->contrast = DEFAULT_PROP_CONTRAST;
+    src->gamma = DEFAULT_PROP_GAMMA;
 
     /* set source as live (no preroll) */
     gst_base_src_set_live (GST_BASE_SRC (src), TRUE);
@@ -334,6 +366,12 @@ gst_toupcam_src_start (GstBaseSrc * bsrc)
     Toupcam_put_VFlip(src->hCam, src->vflip);
     Toupcam_put_AutoExpoEnable(src->hCam, src->auto_exposure);
 
+    Toupcam_put_Hue(src->hCam, src->hue);
+    Toupcam_put_Saturation(src->hCam, src->saturation);
+    Toupcam_put_Brightness(src->hCam, src->brightness);
+    Toupcam_put_Contrast(src->hCam, src->contrast);
+    Toupcam_put_Gamma(src->hCam, src->gamma);
+
     // We support just colour of one type, BGR 24-bit, I am not attempting to support all camera types
     src->nBitsPerPixel = 24;
     unsigned nFrame, nTime, nTotalFrame;
@@ -347,7 +385,7 @@ gst_toupcam_src_start (GstBaseSrc * bsrc)
 
     return TRUE;
 
-    fail:
+fail:
     if (src->hCam) {
         src->hCam = 0;
     }

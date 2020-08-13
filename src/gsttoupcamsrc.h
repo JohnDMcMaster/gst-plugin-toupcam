@@ -45,6 +45,7 @@ struct _GstToupCamSrc
   gboolean hflip;
   gboolean vflip;
   gboolean auto_exposure;
+  gboolean expotime;
   gint hue;
   gint saturation;
   gint brightness;
@@ -58,6 +59,7 @@ struct _GstToupCamSrc
   GstClockTime duration;
   GstClockTime last_frame_time;
   gint imagesAvailable;
+  gint imagesPulled;
   GMutex mutex;
   GCond cond;
 };

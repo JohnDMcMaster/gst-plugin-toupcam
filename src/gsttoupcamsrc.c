@@ -62,6 +62,7 @@ enum
     PROP_HFLIP,
     PROP_VFLIP,
     PROP_AUTO_EXPOSURE,
+    PROP_EXPOTIME,
     PROP_HUE,
     PROP_SATURATION,
     PROP_BRIGHTNESS,
@@ -78,6 +79,10 @@ enum
 #define TOUPCAM_OPTION_BYTEORDER_BGR    1
 
 #define DEFAULT_PROP_AUTO_EXPOSURE		TRUE
+#define DEFAULT_PROP_EXPOTIME		    0
+#define MIN_PROP_EXPOTIME		        0
+//FIXME: GUI max is 15. However we will time out after 5 sec
+#define MAX_PROP_EXPOTIME		        5000000
 #define DEFAULT_PROP_HFLIP		        FALSE
 #define DEFAULT_PROP_VFLIP		        FALSE
 #define DEFAULT_PROP_HUE                TOUPCAM_HUE_DEF
@@ -146,6 +151,9 @@ gst_toupcam_src_class_init (GstToupCamSrcClass * klass)
     g_object_class_install_property (gobject_class, PROP_AUTO_EXPOSURE,
             g_param_spec_boolean ("auto_exposure", "Auto exposure", "Auto exposure",
                     DEFAULT_PROP_AUTO_EXPOSURE, G_PARAM_READABLE | G_PARAM_WRITABLE));
+    g_object_class_install_property (gobject_class, PROP_EXPOTIME,
+            g_param_spec_int ("expotime", "Exposure us", "...",
+                    MIN_PROP_EXPOTIME, MAX_PROP_EXPOTIME, DEFAULT_PROP_EXPOTIME, G_PARAM_READABLE | G_PARAM_WRITABLE));
 
     g_object_class_install_property (gobject_class, PROP_HUE,
             g_param_spec_int ("hue", "...", "...",
@@ -168,6 +176,7 @@ static void
 gst_toupcam_src_init (GstToupCamSrc * src)
 {
     src->auto_exposure = DEFAULT_PROP_AUTO_EXPOSURE;
+    src->expotime = DEFAULT_PROP_EXPOTIME;
     src->vflip = DEFAULT_PROP_VFLIP;
     src->hflip = DEFAULT_PROP_HFLIP;
     src->hue = DEFAULT_PROP_HUE;
@@ -183,7 +192,7 @@ gst_toupcam_src_init (GstToupCamSrc * src)
     gst_base_src_set_format (GST_BASE_SRC (src), GST_FORMAT_TIME);
 
     g_mutex_init(&src->mutex);
-        g_cond_init(&src->cond);
+    g_cond_init(&src->cond);
     gst_toupcam_src_reset (src);
 }
 
@@ -193,6 +202,7 @@ gst_toupcam_src_reset (GstToupCamSrc * src)
     src->hCam = 0;
     src->cameraPresent = FALSE;
     src->imagesAvailable = 0;
+    src->imagesPulled = 0;
     src->total_timeouts = 0;
     src->last_frame_time = 0;
     src->m_total = 0;
@@ -218,6 +228,9 @@ gst_toupcam_src_set_property (GObject * object, guint property_id,
         break;
     case PROP_AUTO_EXPOSURE:
         src->auto_exposure = g_value_get_boolean (value);
+        break;
+    case PROP_EXPOTIME:
+        src->expotime = g_value_get_int (value);
         break;
     case PROP_HUE:
         src->hue = g_value_get_int (value);
@@ -261,6 +274,9 @@ gst_toupcam_src_get_property (GObject * object, guint property_id,
         break;
     case PROP_AUTO_EXPOSURE:
         g_value_set_boolean (value, src->auto_exposure);
+        break;
+    case PROP_EXPOTIME:
+        g_value_set_int (value, src->expotime);
         break;
 
     case PROP_HUE:
@@ -378,13 +394,35 @@ gst_toupcam_src_start (GstBaseSrc * bsrc)
     Toupcam_put_Option(src->hCam, TOUPCAM_OPTION_BYTEORDER, TOUPCAM_OPTION_BYTEORDER_BGR);
     Toupcam_put_HFlip(src->hCam, src->hflip);
     Toupcam_put_VFlip(src->hCam, src->vflip);
-    Toupcam_put_AutoExpoEnable(src->hCam, src->auto_exposure);
+    hr = Toupcam_put_AutoExpoEnable(src->hCam, src->auto_exposure);
+    if (FAILED(hr)) {
+        GST_ERROR_OBJECT (src, "failed to auto exposure, hr = %08x", hr);
+        goto fail;
+    }
+    if (!src->auto_exposure) {
+        //setting this severely interferes with auto exposure
+        Toupcam_put_ExpoTime(src->hCam, src->expotime);
+    }
 
     Toupcam_put_Hue(src->hCam, src->hue);
     Toupcam_put_Saturation(src->hCam, src->saturation);
     Toupcam_put_Brightness(src->hCam, src->brightness);
     Toupcam_put_Contrast(src->hCam, src->contrast);
     Toupcam_put_Gamma(src->hCam, src->gamma);
+    
+
+    /*
+    //maybe rgb gain better, but not well documented
+    int aGain = {10, 10, 10};
+    Toupcam_put_WhiteBalanceGain(src->hCam, aGain);
+
+    unsigned us = 50000;
+    for (unsigned rgb = 1; rgb < 4; ++rgb) {
+        Toupcam_put_Option(src->hCam, TOUPCAM_OPTION_SEQUENCER_EXPOTIME | rgb, us);
+    }
+    */
+
+
 
     // We support just colour of one type, BGR 24-bit, I am not attempting to support all camera types
     src->nBitsPerPixel = 24;
@@ -505,30 +543,32 @@ gst_toupcam_src_fill (GstPushSrc * psrc, GstBuffer * buf)
     GstToupCamSrc *src = GST_TOUPCAM_SRC (psrc);
     GstMapInfo minfo;
 
+    printf("waiting for new image\n");
+
     // lock next (raw) image for read access, convert it to the desired
     // format and unlock it again, so that grabbing can go on
 
     // Wait for the next image to be ready
-        int timeout = 5;
-        unsigned startImages = src->imagesAvailable;
-        while (startImages >= src->imagesAvailable) {
-                gint64 end_time;
-                g_mutex_lock(&src->mutex);
-                end_time = g_get_monotonic_time () + G_TIME_SPAN_SECOND;
-                if (!g_cond_wait_until(&src->cond, &src->mutex, end_time)) {
-                        // timeout has passed.
-                        //g_mutex_unlock (&src->mutex); // return here if needed
-                        //return NULL;
-                }
-                g_mutex_unlock (&src->mutex);
-                timeout--;
-                if (timeout <= 0) {
-            // did not return an image. why?
-            // ----------------------------------------------------------
-            GST_ERROR_OBJECT(src, "WaitEvent timed out.");
-            return GST_FLOW_ERROR;
-                }
-        }
+    int timeout = 5;
+    while (src->imagesAvailable <= src->imagesPulled) {
+            gint64 end_time;
+            g_mutex_lock(&src->mutex);
+            end_time = g_get_monotonic_time () + G_TIME_SPAN_SECOND;
+            if (!g_cond_wait_until(&src->cond, &src->mutex, end_time)) {
+                printf("timed out waiting for image, timeout=%u\n", timeout);
+                // timeout has passed.
+                //g_mutex_unlock (&src->mutex); // return here if needed
+                //return NULL;
+            }
+            g_mutex_unlock (&src->mutex);
+            timeout--;
+            if (timeout <= 0) {
+                // did not return an image. why?
+                // ----------------------------------------------------------
+                GST_ERROR_OBJECT(src, "WaitEvent timed out.");
+                return GST_FLOW_ERROR;
+            }
+    }
 
     //  successfully returned an image
     // ----------------------------------------------------------
@@ -539,13 +579,14 @@ gst_toupcam_src_fill (GstPushSrc * psrc, GstBuffer * buf)
 
     // From the grabber source we get 1 progressive frame
     ToupcamFrameInfoV2 info = { 0 };
-    printf("pull new image\n");
+    printf("pulling new image\n");
     HRESULT hr = Toupcam_PullImageV2(src->hCam, minfo.data, 24, &info);
     if (FAILED(hr)) {
         GST_ERROR_OBJECT (src, "failed to pull image, hr = %08x", hr);
         gst_buffer_unmap (buf, &minfo);
         return GST_FLOW_ERROR;
     }
+    src->imagesPulled += 1;
     /* After we get the image data, we can do anything for the data we want to do */
     printf("pull image ok, total = %u, resolution = %u x %u\n", ++src->m_total, info.width, info.height);
     printf("flag %u, seq %u, us %u\n", info.flag, info.seq, info.timestamp);

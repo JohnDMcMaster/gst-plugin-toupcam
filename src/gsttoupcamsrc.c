@@ -73,7 +73,6 @@ enum
 
 #define PROP_CAMERAPRESENT       FALSE
 
-#define DEFAULT_TOUPCAM_VIDEO_FORMAT GST_VIDEO_FORMAT_BGR
 // Put matching type text in the pad template below
 
 #define TOUPCAM_OPTION_BYTEORDER_RGB    0
@@ -99,7 +98,7 @@ static GstStaticPadTemplate gst_toupcam_src_template =
                 GST_PAD_SRC,
                 GST_PAD_ALWAYS,
                 GST_STATIC_CAPS (GST_VIDEO_CAPS_MAKE
-                        ("{ BGR }"))
+                        ("{ RGB }"))
         );
 
 /* class initialisation */
@@ -501,7 +500,7 @@ gst_toupcam_src_start (GstBaseSrc * bsrc)
     }
     */
 
-    Toupcam_put_Option(src->hCam, TOUPCAM_OPTION_BYTEORDER, TOUPCAM_OPTION_BYTEORDER_BGR);
+    Toupcam_put_Option(src->hCam, TOUPCAM_OPTION_BYTEORDER, TOUPCAM_OPTION_BYTEORDER_RGB);
     Toupcam_put_HFlip(src->hCam, src->hflip);
     Toupcam_put_VFlip(src->hCam, src->vflip);
     hr = Toupcam_put_AutoExpoEnable(src->hCam, src->auto_exposure);
@@ -594,7 +593,7 @@ gst_toupcam_src_get_caps (GstBaseSrc * bsrc, GstCaps * filter)
         vinfo.fps_d = 1;
         vinfo.interlace_mode = GST_VIDEO_INTERLACE_MODE_PROGRESSIVE;
 
-        vinfo.finfo = gst_video_format_get_info (DEFAULT_TOUPCAM_VIDEO_FORMAT);
+        vinfo.finfo = gst_video_format_get_info (GST_VIDEO_FORMAT_RGB);
 
         // cannot do this for variable frame rate
         //src->duration = gst_util_uint64_scale_int (GST_SECOND, vinfo.fps_d, vinfo.fps_n); // NB n and d are wrong way round to invert the fps into a duration.

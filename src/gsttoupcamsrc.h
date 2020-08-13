@@ -29,8 +29,6 @@ struct _GstToupCamSrc
   // device
   HToupcam hCam;  // device handle
   gboolean cameraPresent;
-  gboolean hflip;
-  gboolean vflip;
   gint nWidth;
   gint nHeight;
   gint nBitsPerPixel;
@@ -43,6 +41,10 @@ struct _GstToupCamSrc
   // gst properties
   gdouble framerate;
   gdouble maxframerate;
+  // library based properties
+  gboolean hflip;
+  gboolean vflip;
+  gboolean auto_exposure;
 
   // stream
   gboolean acq_started;

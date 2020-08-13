@@ -60,6 +60,7 @@ enum
     PROP_CAMERAPRESENT,
     PROP_HFLIP,
     PROP_VFLIP,
+    PROP_AUTO_EXPOSURE,
 };
 
 #define PROP_CAMERAPRESENT       FALSE
@@ -69,6 +70,11 @@ enum
 
 #define TOUPCAM_OPTION_BYTEORDER_RGB    0
 #define TOUPCAM_OPTION_BYTEORDER_BGR    1
+
+#define DEFAULT_PROP_AUTO_EXPOSURE		TRUE
+#define DEFAULT_PROP_HFLIP		        FALSE
+#define DEFAULT_PROP_VFLIP		        FALSE
+
 
 // pad template
 static GstStaticPadTemplate gst_toupcam_src_template =
@@ -122,15 +128,22 @@ gst_toupcam_src_class_init (GstToupCamSrcClass * klass)
 
     g_object_class_install_property (gobject_class, PROP_HFLIP,
             g_param_spec_boolean ("hflip", "Horizontal flip", "Horizontal flip",
-                    FALSE, G_PARAM_READABLE | G_PARAM_WRITABLE));
-    g_object_class_install_property (gobject_class, PROP_HFLIP,
+                    DEFAULT_PROP_HFLIP, G_PARAM_READABLE | G_PARAM_WRITABLE));
+    g_object_class_install_property (gobject_class, PROP_VFLIP,
             g_param_spec_boolean ("vflip", "Vertical flip", "Vertical flip",
-                    FALSE, G_PARAM_READABLE | G_PARAM_WRITABLE));
+                    DEFAULT_PROP_VFLIP, G_PARAM_READABLE | G_PARAM_WRITABLE));
+    g_object_class_install_property (gobject_class, PROP_AUTO_EXPOSURE,
+            g_param_spec_boolean ("auto_exposure", "Auto exposure", "Auto exposure",
+                    DEFAULT_PROP_AUTO_EXPOSURE, G_PARAM_READABLE | G_PARAM_WRITABLE));
 }
 
 static void
 gst_toupcam_src_init (GstToupCamSrc * src)
 {
+    src->auto_exposure = DEFAULT_PROP_AUTO_EXPOSURE;
+    src->vflip = DEFAULT_PROP_VFLIP;
+    src->hflip = DEFAULT_PROP_HFLIP;
+
     /* set source as live (no preroll) */
     gst_base_src_set_live (GST_BASE_SRC (src), TRUE);
 
@@ -176,6 +189,9 @@ gst_toupcam_src_set_property (GObject * object, guint property_id,
         src->vflip = g_value_get_boolean (value);
         break;
     }
+    case PROP_AUTO_EXPOSURE: {
+        src->auto_exposure = g_value_get_boolean (value);
+    }
     default:
         G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
         break;
@@ -211,6 +227,10 @@ gst_toupcam_src_get_property (GObject * object, guint property_id,
         g_value_set_boolean (value, bVFlip);
         */
         g_value_set_boolean (value, src->vflip);
+        break;
+    }
+    case PROP_AUTO_EXPOSURE: {
+        g_value_set_boolean (value, src->auto_exposure);
         break;
     }
     default:
@@ -288,6 +308,7 @@ gst_toupcam_src_start (GstBaseSrc * bsrc)
     src->hCam = Toupcam_Open(NULL);
     if (NULL == src->hCam)
     {
+        printf("failed open\n");
         GST_ERROR_OBJECT(src, "No ToupCam device found or open failed");
         goto fail;
     }
@@ -311,6 +332,7 @@ gst_toupcam_src_start (GstBaseSrc * bsrc)
     Toupcam_put_Option(src->hCam, TOUPCAM_OPTION_BYTEORDER, TOUPCAM_OPTION_BYTEORDER_BGR);
     Toupcam_put_HFlip(src->hCam, src->hflip);
     Toupcam_put_VFlip(src->hCam, src->vflip);
+    Toupcam_put_AutoExpoEnable(src->hCam, src->auto_exposure);
 
     // We support just colour of one type, BGR 24-bit, I am not attempting to support all camera types
     src->nBitsPerPixel = 24;

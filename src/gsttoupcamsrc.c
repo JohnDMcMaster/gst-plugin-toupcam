@@ -375,6 +375,72 @@ gst_toupcam_src_start (GstBaseSrc * bsrc)
         goto fail;
     }
 
+    if (1) {
+        int itmp;
+        short stmp;
+        unsigned short ustmp;
+        char buff[64];
+
+        printf("Camera info\n");
+        printf("  max bit depth: %d\n", Toupcam_get_MaxBitDepth(src->hCam));
+        printf("  max fan speed: %d\n", Toupcam_get_FanMaxSpeed(src->hCam));
+        printf("  max frame speed: %d\n", Toupcam_get_MaxSpeed(src->hCam));
+        printf("  mono mode: %d\n", Toupcam_get_MonoMode(src->hCam));
+        int resn = Toupcam_get_StillResolutionNumber(src->hCam);
+        printf("  still resolution number: %d\n", resn);
+        for (int resi = 0; resi < resn; ++resi) {
+            int width, height;
+            if (!FAILED(Toupcam_get_StillResolution(src->hCam, resi, &width, &height))) {
+                printf("    %u: %i x %i\n", resi, width, height);
+            }
+            float pixx, pixy;
+            if (!FAILED(Toupcam_get_PixelSize(src->hCam, resi, &pixx, &pixy))) {
+                printf("    %u: %0.1f x %0.1f um\n", resi, pixx, pixy);
+            }
+        }
+
+        if (!FAILED(Toupcam_get_Negative(src->hCam, &itmp))) {
+            printf("  negative: %d\n", itmp);
+        }
+        if (!FAILED(Toupcam_get_Chrome(src->hCam, &itmp))) {
+            printf("  chrome: %d\n", itmp);
+        }
+        if (!FAILED(Toupcam_get_HZ(src->hCam, &itmp))) {
+            printf("  hz: %d\n", itmp);
+        }
+        if (!FAILED(Toupcam_get_Mode(src->hCam, &itmp))) {
+            printf("  mode: %d\n", itmp);
+        }
+        if (!FAILED(Toupcam_get_RealTime(src->hCam, &itmp))) {
+            printf("  real time: %d\n", itmp);
+        }
+
+        if (!FAILED(Toupcam_get_Temperature(src->hCam, &stmp))) {
+            printf("  temperature: %d\n", stmp);
+        }
+        if (!FAILED(Toupcam_get_Revision(src->hCam, &ustmp))) {
+            printf("  revision: %d\n", ustmp);
+        }
+
+        if (!FAILED(Toupcam_get_SerialNumber(src->hCam, buff))) {
+            printf("  serial number: %s\n", buff);
+        }
+        if (!FAILED(Toupcam_get_FwVersion(src->hCam, buff))) {
+            printf("  fw version: %s\n", buff);
+        }
+        if (!FAILED(Toupcam_get_HwVersion(src->hCam, buff))) {
+            printf("  hw version: %s\n", buff);
+        }
+        if (!FAILED(Toupcam_get_ProductionDate(src->hCam, buff))) {
+            printf("  production date: %s\n", buff);
+        }
+        if (!FAILED(Toupcam_get_FpgaVersion(src->hCam, buff))) {
+            printf("  fpga version: %s\n", buff);
+        }
+        
+
+    }
+
     src->cameraPresent = TRUE;
 
     HRESULT hr = Toupcam_get_Size(src->hCam, &src->nWidth, &src->nHeight);
@@ -410,6 +476,8 @@ gst_toupcam_src_start (GstBaseSrc * bsrc)
     Toupcam_put_Contrast(src->hCam, src->contrast);
     Toupcam_put_Gamma(src->hCam, src->gamma);
     
+    //real time
+    //Toupcam_put_RealTime(src->hCam, 1);
 
     /*
     //maybe rgb gain better, but not well documented

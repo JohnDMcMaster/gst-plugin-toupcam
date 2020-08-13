@@ -17,9 +17,6 @@
  * </refsect2>
  */
 
-// Which functions of the base class to override. Create must alloc and fill the buffer. Fill just needs to fill it
-//#define OVERRIDE_FILL  !!! NOT IMPLEMENTED !!!
-#define OVERRIDE_CREATE
 
 #include <unistd.h> // for usleep
 #include <string.h> // for memcpy
@@ -35,6 +32,8 @@
 #include "toupcam.h"
 
 #include "gsttoupcamsrc.h"
+
+#include <stdio.h>
 
 GST_DEBUG_CATEGORY_STATIC (gst_toupcam_src_debug);
 #define GST_CAT_DEFAULT gst_toupcam_src_debug
@@ -52,12 +51,7 @@ static gboolean gst_toupcam_src_stop (GstBaseSrc * src);
 static GstCaps *gst_toupcam_src_get_caps (GstBaseSrc * src, GstCaps * filter);
 static gboolean gst_toupcam_src_set_caps (GstBaseSrc * src, GstCaps * caps);
 
-#ifdef OVERRIDE_CREATE
-    static GstFlowReturn gst_toupcam_src_create (GstPushSrc * src, GstBuffer ** buf);
-#endif
-#ifdef OVERRIDE_FILL
-    static GstFlowReturn gst_toupcam_src_fill (GstPushSrc * src, GstBuffer * buf);
-#endif
+static GstFlowReturn gst_toupcam_src_fill (GstPushSrc * src, GstBuffer * buf);
 
 //static GstCaps *gst_toupcam_src_create_caps (GstToupCamSrc * src);
 static void gst_toupcam_src_reset (GstToupCamSrc * src);
@@ -114,14 +108,8 @@ gst_toupcam_src_class_init (GstToupCamSrcClass * klass)
     gstbasesrc_class->get_caps = GST_DEBUG_FUNCPTR (gst_toupcam_src_get_caps);
     gstbasesrc_class->set_caps = GST_DEBUG_FUNCPTR (gst_toupcam_src_set_caps);
 
-#ifdef OVERRIDE_CREATE
-    gstpushsrc_class->create = GST_DEBUG_FUNCPTR (gst_toupcam_src_create);
-    GST_DEBUG ("Using gst_toupcam_src_create.");
-#endif
-#ifdef OVERRIDE_FILL
     gstpushsrc_class->fill   = GST_DEBUG_FUNCPTR (gst_toupcam_src_fill);
     GST_DEBUG ("Using gst_toupcam_src_fill.");
-#endif
 
     // Install GObject properties
     // Camera Present property
@@ -225,6 +213,7 @@ gst_toupcam_src_finalize (GObject * object)
 static void EventCallback(unsigned nEvent, void* pCallbackCtx)
 {
     GstToupCamSrc *src = GST_TOUPCAM_SRC (pCallbackCtx);
+    GST_DEBUG_OBJECT (src, "event callback: %d\n", nEvent);
     if (TOUPCAM_EVENT_IMAGE == nEvent)
     {
         g_mutex_lock(&src->mutex);
@@ -236,6 +225,7 @@ static void EventCallback(unsigned nEvent, void* pCallbackCtx)
     {
         GST_DEBUG_OBJECT (src, "event callback: %d\n", nEvent);
     }
+    printf("calllback %u (want %u), images now %u\n", nEvent, TOUPCAM_EVENT_IMAGE, src->imagesAvailable);
 }
 
 static gboolean
@@ -387,12 +377,13 @@ gst_toupcam_src_set_caps (GstBaseSrc * bsrc, GstCaps * caps)
     return FALSE;
 }
 
-
-//  This can override the push class create fn, it is the same as fill above but it forces the creation of a buffer here to copy into.
-#ifdef OVERRIDE_CREATE
+// Override the push class fill fn, using the default create and alloc fns.
+// buf is the buffer to fill, it may be allocated in alloc or from a downstream element.
+// Other functions such as deinterlace do not work with this type of buffer.
 static GstFlowReturn
-gst_toupcam_src_create (GstPushSrc * psrc, GstBuffer ** buf)
+gst_toupcam_src_fill (GstPushSrc * psrc, GstBuffer * buf)
 {
+    printf("\n");
     GstToupCamSrc *src = GST_TOUPCAM_SRC (psrc);
     GstMapInfo minfo;
 
@@ -401,7 +392,8 @@ gst_toupcam_src_create (GstPushSrc * psrc, GstBuffer ** buf)
 
     // Wait for the next image to be ready
 	int timeout = 5;
-	while (src->imagesAvailable < 1 && (timeout > 0)) {
+	unsigned startImages = src->imagesAvailable;
+	while (startImages >= src->imagesAvailable) {
 		gint64 end_time;
 		g_mutex_lock(&src->mutex);
 		end_time = g_get_monotonic_time () + G_TIME_SPAN_SECOND;
@@ -412,83 +404,64 @@ gst_toupcam_src_create (GstPushSrc * psrc, GstBuffer ** buf)
 		}
 		g_mutex_unlock (&src->mutex);
 		timeout--;
+		if (timeout <= 0) {
+            // did not return an image. why?
+            // ----------------------------------------------------------
+            GST_ERROR_OBJECT(src, "WaitEvent timed out.");
+            return GST_FLOW_ERROR;
+		}
 	}
 
-    if(G_LIKELY(src->imagesAvailable < 1))
-    {
-        //  successfully returned an image
-        // ----------------------------------------------------------
+    //  successfully returned an image
+    // ----------------------------------------------------------
 
-        // Copy image to buffer in the right way
+    // Copy image to buffer in the right way
 
-        // Create a new buffer for the image
-        *buf = gst_buffer_new_and_alloc (src->nHeight * src->gst_stride);
+    gst_buffer_map (buf, &minfo, GST_MAP_WRITE);
 
-        gst_buffer_map (*buf, &minfo, GST_MAP_WRITE);
-
-        // From the grabber source we get 1 progressive frame
-        ToupcamFrameInfoV2 info = { 0 };
-        HRESULT hr = Toupcam_PullImageV2(src->hCam, minfo.data, 24, &info);
-        if (FAILED(hr))
-            GST_ERROR_OBJECT (src, "failed to pull image, hr = %08x", hr);
-        else
-        {
-            /* After we get the image data, we can do anything for the data we want to do */
-            GST_ERROR_OBJECT (src, "pull image ok, total = %u, resolution = %u x %u", ++src->m_total, info.width, info.height);
-        }
-
-        /*for (guint i = 0; i < src->nHeight; i++) {
-            memcpy (minfo.data + i * src->gst_stride,
-                    src->pcImgMem + i * src->nPitch, src->nPitch);
-        }*/
-
-        gst_buffer_unmap (*buf, &minfo);
-
-        // If we do not use gst_base_src_set_do_timestamp() we need to add timestamps manually
-        src->last_frame_time += src->duration;   // Get the timestamp for this frame
-        if(!gst_base_src_get_do_timestamp(GST_BASE_SRC(psrc))){
-            GST_BUFFER_PTS(*buf) = src->last_frame_time;  // convert ms to ns
-            GST_BUFFER_DTS(*buf) = src->last_frame_time;  // convert ms to ns
-        }
-        GST_BUFFER_DURATION(*buf) = src->duration;
-        GST_DEBUG_OBJECT(src, "pts, dts: %" GST_TIME_FORMAT ", duration: %ld ms", GST_TIME_ARGS (src->last_frame_time), GST_TIME_AS_MSECONDS(src->duration));
-
-        // count frames, and send EOS when required frame number is reached
-        GST_BUFFER_OFFSET(*buf) = src->n_frames;  // from videotestsrc
-        src->n_frames++;
-        GST_BUFFER_OFFSET_END(*buf) = src->n_frames;  // from videotestsrc
-        if (psrc->parent.num_buffers>0)  // If we were asked for a specific number of buffers, stop when complete
-            if (G_UNLIKELY(src->n_frames >= psrc->parent.num_buffers))
-                return GST_FLOW_EOS;
-
-        // see, if we had to drop some frames due to data transfer stalls. if so,
-        // output a message
-    }
-    else
-    {
-        // did not return an image. why?
-        // ----------------------------------------------------------
-        GST_ERROR_OBJECT(src, "WaitEvent timed out.");
+    // From the grabber source we get 1 progressive frame
+    ToupcamFrameInfoV2 info = { 0 };
+    printf("pull new image\n");
+    HRESULT hr = Toupcam_PullImageV2(src->hCam, minfo.data, 24, &info);
+    if (FAILED(hr)) {
+        GST_ERROR_OBJECT (src, "failed to pull image, hr = %08x", hr);
+        gst_buffer_unmap (buf, &minfo);
         return GST_FLOW_ERROR;
     }
+    /* After we get the image data, we can do anything for the data we want to do */
+    printf("pull image ok, total = %u, resolution = %u x %u\n", ++src->m_total, info.width, info.height);
+    printf("flag %u, seq %u, us %u\n", info.flag, info.seq, info.timestamp);
+
+    gst_buffer_unmap (buf, &minfo);
+
+    /*
+    // If we do not use gst_base_src_set_do_timestamp() we need to add timestamps manually
+    src->last_frame_time += src->duration;   // Get the timestamp for this frame
+    if (!gst_base_src_get_do_timestamp(GST_BASE_SRC(psrc))){
+        GST_BUFFER_PTS(buf) = src->last_frame_time;  // convert ms to ns
+        GST_BUFFER_DTS(buf) = src->last_frame_time;  // convert ms to ns
+    }
+    GST_BUFFER_DURATION(buf) = src->duration;
+    printf("pts, dts: %" GST_TIME_FORMAT ", duration: %ld ms\n", GST_TIME_ARGS (src->last_frame_time), GST_TIME_AS_MSECONDS(src->duration));
+    */
+    GST_BUFFER_PTS(buf) = GST_CLOCK_TIME_NONE;
+    GST_BUFFER_DTS(buf) = GST_CLOCK_TIME_NONE;
+    GST_BUFFER_DURATION(buf) = GST_CLOCK_TIME_NONE;
+    
+
+    // count frames, and send EOS when required frame number is reached
+    GST_BUFFER_OFFSET(buf) = src->n_frames;  // from videotestsrc
+    src->n_frames++;
+    GST_BUFFER_OFFSET_END(buf) = src->n_frames;  // from videotestsrc
+    if (psrc->parent.num_buffers>0)  // If we were asked for a specific number of buffers, stop when complete
+        if (G_UNLIKELY(src->n_frames >= psrc->parent.num_buffers)) {
+            printf("EOS\n");
+            return GST_FLOW_EOS;
+        }
+
+    // see, if we had to drop some frames due to data transfer stalls. if so,
+    // output a message
 
     return GST_FLOW_OK;
 }
-#endif // OVERRIDE_CREATE
-
-// Override the push class fill fn, using the default create and alloc fns.
-// buf is the buffer to fill, it may be allocated in alloc or from a downstream element.
-// Other functions such as deinterlace do not work with this type of buffer.
-#ifdef OVERRIDE_FILL
-static GstFlowReturn
-gst_toupcam_src_fill (GstPushSrc * psrc, GstBuffer * buf_external)
-{
-    GstToupCamSrc *src = GST_TOUPCAM_SRC (psrc);
-    GstMapInfo minfo;
-    guint8 *image;
-    GstBuffer ** buf = &buf_external;
-
-    return GST_FLOW_OK;
-}
-#endif // OVERRIDE_FILL
 

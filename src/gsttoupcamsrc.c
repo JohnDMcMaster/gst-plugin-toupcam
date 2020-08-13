@@ -59,6 +59,7 @@ enum
 {
     PROP_0,
     PROP_CAMERAPRESENT,
+    PROP_ESIZE,
     PROP_HFLIP,
     PROP_VFLIP,
     PROP_AUTO_EXPOSURE,
@@ -141,6 +142,9 @@ gst_toupcam_src_class_init (GstToupCamSrcClass * klass)
     g_object_class_install_property (gobject_class, PROP_CAMERAPRESENT,
             g_param_spec_boolean ("devicepresent", "Camera Device Present", "Is the camera present and connected OK?",
                     FALSE, G_PARAM_READABLE));
+    g_object_class_install_property (gobject_class, PROP_ESIZE,
+            g_param_spec_int ("esize", "Camera size enumeration", "...",
+                    0, 2, 0, G_PARAM_READABLE | G_PARAM_WRITABLE));
 
     g_object_class_install_property (gobject_class, PROP_HFLIP,
             g_param_spec_boolean ("hflip", "Horizontal flip", "Horizontal flip",
@@ -220,6 +224,9 @@ gst_toupcam_src_set_property (GObject * object, guint property_id,
     case PROP_CAMERAPRESENT:
         src->cameraPresent = g_value_get_boolean (value);
         break;
+    case PROP_ESIZE:
+        src->esize = g_value_get_int (value);
+        break;
     case PROP_HFLIP:
         src->hflip = g_value_get_boolean (value);
         break;
@@ -265,6 +272,9 @@ gst_toupcam_src_get_property (GObject * object, guint property_id,
     switch (property_id) {
     case PROP_CAMERAPRESENT:
         g_value_set_boolean (value, src->cameraPresent);
+        break;
+    case PROP_ESIZE:
+        g_value_set_int (value, src->esize);
         break;
     case PROP_HFLIP: 
         g_value_set_boolean (value, src->hflip);
@@ -437,13 +447,23 @@ gst_toupcam_src_start (GstBaseSrc * bsrc)
         if (!FAILED(Toupcam_get_FpgaVersion(src->hCam, buff))) {
             printf("  fpga version: %s\n", buff);
         }
-        
-
+        /*
+        if (!FAILED(Toupcam_get_Name(id, buff))) {
+            printf("  name: %s\n", buff);
+        }
+        */
     }
+
 
     src->cameraPresent = TRUE;
 
-    HRESULT hr = Toupcam_get_Size(src->hCam, &src->nWidth, &src->nHeight);
+    HRESULT hr;
+    hr = Toupcam_put_eSize(src->hCam, src->esize);
+    if (FAILED(hr)) {
+        GST_ERROR_OBJECT(src, "failed to set size, hr = %08x", hr);
+        goto fail;
+    }
+    hr = Toupcam_get_Size(src->hCam, &src->nWidth, &src->nHeight);
     if (FAILED(hr)) {
         GST_ERROR_OBJECT(src, "failed to get size, hr = %08x", hr);
         goto fail;

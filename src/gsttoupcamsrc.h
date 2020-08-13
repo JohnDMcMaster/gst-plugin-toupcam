@@ -29,6 +29,7 @@ struct _GstToupCamSrc
   // device
   HToupcam hCam;  // device handle
   gboolean cameraPresent;
+  gint esize;
   gint nWidth;
   gint nHeight;
   gint nBitsPerPixel;

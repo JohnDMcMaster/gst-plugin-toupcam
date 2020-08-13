@@ -452,6 +452,19 @@ gst_toupcam_src_start (GstBaseSrc * bsrc)
             printf("  name: %s\n", buff);
         }
         */
+        //0 => #define TOUPCAM_PIXELFORMAT_RAW8             0x00
+        Toupcam_get_Option(src->hCam, TOUPCAM_OPTION_PIXEL_FORMAT, &itmp);
+            printf("  pixel format: %i\n", itmp);
+
+
+        char nFourCC[4];
+        unsigned bitsperpixel;
+        Toupcam_get_RawFormat(src->hCam, (unsigned *)&nFourCC, &bitsperpixel);
+        //raw code GBRG, bpp 8
+        //needs this to get the full 12 bit
+        //Toupcam_put_Option(src->hCam, TOUPCAM_OPTION_PIXEL_FORMAT, TOUPCAM_PIXELFORMAT_RAW12);
+        //raw code GBRG, bpp 12
+        printf("  raw code %c%c%c%c, bpp %u\n", nFourCC[0], nFourCC[1], nFourCC[2], nFourCC[3], bitsperpixel);
     }
 
 
@@ -476,6 +489,17 @@ gst_toupcam_src_start (GstBaseSrc * bsrc)
     }
 
     // Colour format
+
+
+    /*
+    //can set raw8 and raw12, but not raw16
+    //default raw8
+    hr = Toupcam_put_Option(src->hCam, TOUPCAM_OPTION_PIXEL_FORMAT, TOUPCAM_PIXELFORMAT_RAW12);
+    if (FAILED(hr)) {
+        GST_ERROR_OBJECT (src, "failed to set pixel format, hr = %08x", hr);
+        goto fail;
+    }
+    */
 
     Toupcam_put_Option(src->hCam, TOUPCAM_OPTION_BYTEORDER, TOUPCAM_OPTION_BYTEORDER_BGR);
     Toupcam_put_HFlip(src->hCam, src->hflip);
@@ -565,7 +589,9 @@ gst_toupcam_src_get_caps (GstBaseSrc * bsrc, GstCaps * filter)
         vinfo.width = src->nWidth;
         vinfo.height = src->nHeight;
 
-        vinfo.fps_n = 0;  vinfo.fps_d = 1;  // Frames per second fraction n/d, 0/1 indicates a frame rate may vary
+        // Frames per second fraction n/d, 0/1 indicates a frame rate may vary
+        vinfo.fps_n = 0;
+        vinfo.fps_d = 1;
         vinfo.interlace_mode = GST_VIDEO_INTERLACE_MODE_PROGRESSIVE;
 
         vinfo.finfo = gst_video_format_get_info (DEFAULT_TOUPCAM_VIDEO_FORMAT);

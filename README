@@ -12,6 +12,43 @@ Comments
 
  - It supports just colour of one type
 
+
+McMaster WIP
+--------
+
+    # Ubuntu 20.04, tested on 2020-08-12
+    # Linux dell 5.4.0-26-generic #30-Ubuntu SMP Mon Apr 20 16:58:30 UTC 2020 x86_64 x86_64 x86_64 GNU/Linux
+    # Note 1.8.3 tested working on reference laptop, but 1.16.2 on 20.04
+    sudo apt-get install autoconf
+    sudo apt-get install -y libtool
+    sudo apt-get install -y dpkg-dev devscripts
+    # Takes a while
+    sudo apt-get install -y gstreamer1.0*
+    sudo apt-get install -y libgstreamer-plugins-base1.0-dev
+    echo "export GST_PLUGIN_PATH=/usr/local/lib/gstreamer-1.0" >> ~/.profile
+    sudo apt-get install -y build-essential libgtk-3-dev
+
+    cd ~
+    # md5sum
+    # ca5ca6e77f3913ce4a8dda3d4544dce3  toupcamsdk.zip
+    unzip toupcamsdk.zip
+    sudo mv toupcamsdk /opt/
+    pushd /opt/toupcamsdk/
+    sudo cp linux/udev/99-toupcam.rules  /etc/udev/rules.d/
+    sudo cp linux/x64/libtoupcam.so /lib/x86_64-linux-gnu/
+    popd
+
+    cd ~
+    git clone https://github.com/JohnDMcMaster/gst-plugin-toupcam.git
+    cd gst-plugin-toupcam
+    ./configure
+    make
+    # Works
+    GST_DEBUG=0 GST_PLUGIN_PATH=~/gst-plugin-toupcam/src/.libs/ gst-inspect-1.0 toupcamsrc
+    # WIP
+    GST_DEBUG=0 GST_PLUGIN_PATH=~/gst-plugin-toupcam/src/.libs/ gst-launch-1.0 toupcamsrc ! videoconvert ! xvimagesink
+
+
 Building
 --------
 

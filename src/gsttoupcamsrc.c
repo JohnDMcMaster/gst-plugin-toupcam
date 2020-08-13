@@ -57,14 +57,18 @@ static void gst_toupcam_src_reset (GstToupCamSrc * src);
 enum
 {
     PROP_0,
-    PROP_CAMERAPRESENT
+    PROP_CAMERAPRESENT,
+    PROP_HFLIP,
+    PROP_VFLIP,
 };
-
 
 #define PROP_CAMERAPRESENT       FALSE
 
 #define DEFAULT_TOUPCAM_VIDEO_FORMAT GST_VIDEO_FORMAT_BGR
 // Put matching type text in the pad template below
+
+#define TOUPCAM_OPTION_BYTEORDER_RGB    0
+#define TOUPCAM_OPTION_BYTEORDER_BGR    1
 
 // pad template
 static GstStaticPadTemplate gst_toupcam_src_template =
@@ -115,6 +119,13 @@ gst_toupcam_src_class_init (GstToupCamSrcClass * klass)
     g_object_class_install_property (gobject_class, PROP_CAMERAPRESENT,
             g_param_spec_boolean ("devicepresent", "Camera Device Present", "Is the camera present and connected OK?",
                     FALSE, G_PARAM_READABLE));
+
+    g_object_class_install_property (gobject_class, PROP_HFLIP,
+            g_param_spec_boolean ("hflip", "Horizontal flip", "Horizontal flip",
+                    FALSE, G_PARAM_READABLE | G_PARAM_WRITABLE));
+    g_object_class_install_property (gobject_class, PROP_HFLIP,
+            g_param_spec_boolean ("vflip", "Vertical flip", "Vertical flip",
+                    FALSE, G_PARAM_READABLE | G_PARAM_WRITABLE));
 }
 
 static void
@@ -154,6 +165,17 @@ gst_toupcam_src_set_property (GObject * object, guint property_id,
     case PROP_CAMERAPRESENT:
         src->cameraPresent = g_value_get_boolean (value);
         break;
+    case PROP_HFLIP: {
+        printf("set hflip\n");
+        //Toupcam_put_HFlip(src->hCam, g_value_get_boolean (value));
+        src->hflip = g_value_get_boolean (value);
+        break;
+    }
+    case PROP_VFLIP: {
+        //Toupcam_put_VFlip(src->hCam, g_value_get_boolean (value));
+        src->vflip = g_value_get_boolean (value);
+        break;
+    }
     default:
         G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
         break;
@@ -173,6 +195,24 @@ gst_toupcam_src_get_property (GObject * object, guint property_id,
     case PROP_CAMERAPRESENT:
         g_value_set_boolean (value, src->cameraPresent);
         break;
+    case PROP_HFLIP: {
+        /*
+        int bHFlip;
+        Toupcam_get_HFlip(src->hCam, &bHFlip);
+        g_value_set_boolean (value, bHFlip);
+        */
+        g_value_set_boolean (value, src->hflip);
+        break;
+    }
+    case PROP_VFLIP: {
+        /*
+        int bVFlip;
+        Toupcam_get_VFlip(src->hCam, &bVFlip);
+        g_value_set_boolean (value, bVFlip);
+        */
+        g_value_set_boolean (value, src->vflip);
+        break;
+    }
     default:
         G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
         break;
@@ -235,6 +275,7 @@ gst_toupcam_src_start (GstBaseSrc * bsrc)
     GstToupCamSrc *src = GST_TOUPCAM_SRC (bsrc);
 
     GST_DEBUG_OBJECT (src, "start");
+    printf("start\n");
 
     // Turn on automatic timestamping, if so we do not need to do it manually, BUT there is some evidence that automatic timestamping is laggy
 //    gst_base_src_set_do_timestamp(bsrc, TRUE);
@@ -267,8 +308,9 @@ gst_toupcam_src_start (GstBaseSrc * bsrc)
 
     // Colour format
 
-    //0->RGB, 1->BGR
-    Toupcam_put_Option(src->hCam, TOUPCAM_OPTION_BYTEORDER, 1);
+    Toupcam_put_Option(src->hCam, TOUPCAM_OPTION_BYTEORDER, TOUPCAM_OPTION_BYTEORDER_BGR);
+    Toupcam_put_HFlip(src->hCam, src->hflip);
+    Toupcam_put_VFlip(src->hCam, src->vflip);
 
     // We support just colour of one type, BGR 24-bit, I am not attempting to support all camera types
     src->nBitsPerPixel = 24;
@@ -312,27 +354,27 @@ gst_toupcam_src_get_caps (GstBaseSrc * bsrc, GstCaps * filter)
     GstToupCamSrc *src = GST_TOUPCAM_SRC (bsrc);
     GstCaps *caps;
 
-  if (src->hCam == 0) {
-    caps = gst_pad_get_pad_template_caps (GST_BASE_SRC_PAD (src));
-  } else {
-    GstVideoInfo vinfo;
+    if (src->hCam == 0) {
+        caps = gst_pad_get_pad_template_caps (GST_BASE_SRC_PAD (src));
+    } else {
+        GstVideoInfo vinfo;
 
-    // Create video info 
-    gst_video_info_init (&vinfo);
+        // Create video info 
+        gst_video_info_init (&vinfo);
 
-    vinfo.width = src->nWidth;
-    vinfo.height = src->nHeight;
+        vinfo.width = src->nWidth;
+        vinfo.height = src->nHeight;
 
-    vinfo.fps_n = 0;  vinfo.fps_d = 1;  // Frames per second fraction n/d, 0/1 indicates a frame rate may vary
-    vinfo.interlace_mode = GST_VIDEO_INTERLACE_MODE_PROGRESSIVE;
+        vinfo.fps_n = 0;  vinfo.fps_d = 1;  // Frames per second fraction n/d, 0/1 indicates a frame rate may vary
+        vinfo.interlace_mode = GST_VIDEO_INTERLACE_MODE_PROGRESSIVE;
 
-    vinfo.finfo = gst_video_format_get_info (DEFAULT_TOUPCAM_VIDEO_FORMAT);
+        vinfo.finfo = gst_video_format_get_info (DEFAULT_TOUPCAM_VIDEO_FORMAT);
 
-    // cannot do this for variable frame rate
-    //src->duration = gst_util_uint64_scale_int (GST_SECOND, vinfo.fps_d, vinfo.fps_n); // NB n and d are wrong way round to invert the fps into a duration.
+        // cannot do this for variable frame rate
+        //src->duration = gst_util_uint64_scale_int (GST_SECOND, vinfo.fps_d, vinfo.fps_n); // NB n and d are wrong way round to invert the fps into a duration.
 
-    caps = gst_video_info_to_caps (&vinfo);
-  }
+        caps = gst_video_info_to_caps (&vinfo);
+    }
 
     GST_INFO_OBJECT (src, "The caps are %" GST_PTR_FORMAT, caps);
 
@@ -374,7 +416,7 @@ gst_toupcam_src_set_caps (GstBaseSrc * bsrc, GstCaps * caps)
 
     return TRUE;
 
-    unsupported_caps:
+unsupported_caps:
     GST_ERROR_OBJECT (src, "Unsupported caps: %" GST_PTR_FORMAT, caps);
     return FALSE;
 }

@@ -43,10 +43,8 @@ McMaster WIP
     cd gst-plugin-toupcam
     ./configure
     make
-    # Works
-    GST_DEBUG=0 GST_PLUGIN_PATH=~/gst-plugin-toupcam/src/.libs/ gst-inspect-1.0 toupcamsrc
-    # WIP
-    GST_DEBUG=0 GST_PLUGIN_PATH=~/gst-plugin-toupcam/src/.libs/ gst-launch-1.0 toupcamsrc ! videoconvert ! xvimagesink
+    GST_DEBUG=0 GST_PLUGIN_PATH=$PWD/src/.libs/ gst-inspect-1.0 toupcamsrc
+    GST_DEBUG=0 GST_PLUGIN_PATH=$PWD/src/.libs/ gst-launch-1.0 toupcamsrc ! videoconvert ! xvimagesink
 
 
 Building

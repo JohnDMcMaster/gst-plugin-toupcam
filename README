@@ -5,18 +5,16 @@ What it is
 ----------
 
 This is a source element for GStreamer 1.0 for live acquisition from a camera that uses the 
-toupcam SDK (https://en.ids-imaging.com/downloads.html).
+toupcam SDK (http://www.touptek.com/download/showdownload.php?lang=en&id=32).
 
 
-McMaster WIP
+WIP instructions
 --------
 
     # FOLLOW THIS SECTION
     # They are the best instructions right now
 
-    # Ubuntu 20.04, tested on 2020-08-12
-    # Linux dell 5.4.0-26-generic #30-Ubuntu SMP Mon Apr 20 16:58:30 UTC 2020 x86_64 x86_64 x86_64 GNU/Linux
-    # Note 1.8.3 tested working on reference laptop, but 1.16.2 on 20.04
+    # tested w/ gstreamer 1.16.2 on Ubuntu 20.04 (2020-08-12)
     sudo apt-get install autoconf
     sudo apt-get install -y libtool
     sudo apt-get install -y dpkg-dev devscripts
@@ -27,8 +25,10 @@ McMaster WIP
     sudo apt-get install -y build-essential libgtk-3-dev
 
     cd ~
-    # md5sum
-    # ca5ca6e77f3913ce4a8dda3d4544dce3  toupcamsdk.zip
+    # tested w/ toupcamsdk_46.17309.2020.0616_2020-02-05
+    # (latest as of 2020-08-13)
+    # md5sum toupcamsdk.zip c151ed88b3065569dc344a4a22d90bc3
+    wget http://www.touptek.com/upload/download/toupcamsdk.zip
     unzip toupcamsdk.zip
     sudo mv toupcamsdk /opt/
     pushd /opt/toupcamsdk/
@@ -45,7 +45,7 @@ McMaster WIP
     GST_DEBUG=0 GST_PLUGIN_PATH=$PWD/src/.libs/ gst-launch-1.0 toupcamsrc ! videoconvert ! xvimagesink
 
 
-Building
+FIXME: old Building
 --------
 
 OLD INSTRUCTIONS. Follow above
@@ -72,7 +72,7 @@ See the INSTALL file for advanced setup.
 To import into the Eclipse IDE, use "existing code as Makefile project", and the file EclipseSymbolsAndIncludePaths.xml is included here
 to import the library locations into the project (Properties -> C/C++ General -> Paths and symbols).
 
-Libraries
+FIXME Libraries
 ---------
 
 Download and install the toupcam SDK.

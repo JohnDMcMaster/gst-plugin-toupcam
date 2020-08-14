@@ -93,9 +93,10 @@ enum
 #define DEFAULT_PROP_GAMMA              TOUPCAM_GAMMA_DEF
 
 int raw = 0;
+int x16 = 0;
 
 // pad template
-static GstStaticPadTemplate gst_toupcam_src_template =
+static GstStaticPadTemplate gst_toupcam_src_template_x8 =
         GST_STATIC_PAD_TEMPLATE ("src",
                 GST_PAD_SRC,
                 GST_PAD_ALWAYS,
@@ -103,7 +104,7 @@ static GstStaticPadTemplate gst_toupcam_src_template =
                         ("{ RGB }"))
         );
 
-static GstStaticPadTemplate gst_toupcam_src_template_raw =
+static GstStaticPadTemplate gst_toupcam_src_template_x16 =
         GST_STATIC_PAD_TEMPLATE ("src",
                 GST_PAD_SRC,
                 GST_PAD_ALWAYS,
@@ -131,12 +132,13 @@ gst_toupcam_src_class_init (GstToupCamSrcClass * klass)
     gobject_class->dispose = gst_toupcam_src_dispose;
     gobject_class->finalize = gst_toupcam_src_finalize;
 
-    if (raw) {
+    if (raw || x16) {
+        printf("select x16 template");
         gst_element_class_add_pad_template (gstelement_class,
-                gst_static_pad_template_get (&gst_toupcam_src_template_raw));
+                gst_static_pad_template_get (&gst_toupcam_src_template_x16));
     } else {
         gst_element_class_add_pad_template (gstelement_class,
-                gst_static_pad_template_get (&gst_toupcam_src_template));
+                gst_static_pad_template_get (&gst_toupcam_src_template_x8));
     }
 
     gst_element_class_set_static_metadata (gstelement_class,
@@ -194,6 +196,7 @@ static void
 gst_toupcam_src_init (GstToupCamSrc * src)
 {
     src->raw = raw;
+    src->x16 = x16;
     src->auto_exposure = DEFAULT_PROP_AUTO_EXPOSURE;
     src->expotime = DEFAULT_PROP_EXPOTIME;
     src->vflip = DEFAULT_PROP_VFLIP;
@@ -528,6 +531,28 @@ gst_toupcam_src_start (GstBaseSrc * bsrc)
             goto fail;
         }
         }
+    } else if (src->x16) {
+        //can set raw8 and raw12, but not raw16
+        //default raw8
+        printf("setting up x16\n");
+
+        if (1) {
+        //16 bit output
+        hr = Toupcam_put_Option(src->hCam, TOUPCAM_OPTION_BITDEPTH, 1);
+        if (FAILED(hr)) {
+            GST_ERROR_OBJECT (src, "failed to enable 16 bit, hr = %08x", hr);
+            goto fail;
+        }
+        }
+
+        if (1) {
+        //RGB48
+        hr = Toupcam_put_Option(src->hCam, TOUPCAM_OPTION_RGB, 1);
+        if (FAILED(hr)) {
+            GST_ERROR_OBJECT (src, "failed to enable raw, hr = %08x", hr);
+            goto fail;
+        }
+        }
     } else {
         printf("setting up regular\n");
         Toupcam_put_Option(src->hCam, TOUPCAM_OPTION_BYTEORDER, TOUPCAM_OPTION_BYTEORDER_RGB);
@@ -583,8 +608,6 @@ gst_toupcam_src_start (GstBaseSrc * bsrc)
     Toupcam_put_WhiteBalanceGain(src->hCam, aGain);
     */
     
-    //TOUPCAM_OPTION_RGB
-
 
 
     // We support just colour of one type, BGR 24-bit, I am not attempting to support all camera types
@@ -645,7 +668,7 @@ gst_toupcam_src_get_caps (GstBaseSrc * bsrc, GstCaps * filter)
         vinfo.fps_d = 1;
         vinfo.interlace_mode = GST_VIDEO_INTERLACE_MODE_PROGRESSIVE;
 
-        if (raw) {
+        if (src->raw || src->x16) {
             vinfo.finfo = gst_video_format_get_info (GST_VIDEO_FORMAT_ARGB64);
         } else {
             vinfo.finfo = gst_video_format_get_info (GST_VIDEO_FORMAT_RGB);
@@ -733,8 +756,8 @@ void GBRG12_to_ARGB64(GstToupCamSrc *src, const unsigned char *bufin, unsigned c
 
 void GBRG12_to_ARGB64_x4(GstToupCamSrc *src, const unsigned char *bufin, unsigned char *bufout) {
     //Most channels are unused
-    memset(bufout, 0x00, src->nWidth * src->nHeight * 4 * 2);
-    memset(bufout, 0x00, src->nWidth * src->nHeight * 4);
+    //memset(bufout, 0x00, src->nWidth * src->nHeight * 4);
+    //memset(bufout, 0x00, 16);
     //return;
 
     for (unsigned y = 0; y < src->nHeight; ++y) {
@@ -761,6 +784,50 @@ void GBRG12_to_ARGB64_x4(GstToupCamSrc *src, const unsigned char *bufin, unsigne
                 bufout[5] = pix1;
             }
             bufin += 2;
+            bufout += 8;
+        }
+    }
+}
+
+void RGB48_to_ARGB64_x4(GstToupCamSrc *src, const unsigned char *bufin, unsigned char *bufout) {
+    //return;
+    //Most channels are unused
+    //memset(bufout, 0x00, src->nWidth * src->nHeight * 4 * 2);
+    //memset(bufout, 0x80, src->nWidth * src->nHeight * 4);
+    //memset(bufout, 0x60, src->nWidth * src->nHeight * 3);
+    //memset(bufout, 0x40, src->nWidth * src->nHeight * 2);
+    //memset(bufout, 0x20, src->nWidth * src->nHeight * 1);
+    //return;
+    //return;
+
+    for (unsigned y = 0; y < src->nHeight; ++y) {
+        for (unsigned x = 0; x < src->nWidth; ++x) {
+            uint16_t rpix16 = (bufin[1] << 12) | (bufin[0] << 4);
+            bufin += 2;
+            uint16_t gpix16 = (bufin[1] << 12) | (bufin[0] << 4);
+            bufin += 2;
+            uint16_t bpix16 = (bufin[1] << 12) | (bufin[0] << 4);
+            bufin += 2;
+            if (y == 0 && x < 16) {
+                //0x91 0x0E
+                printf("0x%02X 0x%02X\n", bufin[0], bufin[1]);
+            }
+            uint8_t rpix1 = rpix16 >> 8;
+            uint8_t rpix0 = rpix16 & 0xFF;
+            uint8_t gpix1 = gpix16 >> 8;
+            uint8_t gpix0 = gpix16 & 0xFF;
+            uint8_t bpix1 = bpix16 >> 8;
+            uint8_t bpix0 = bpix16 & 0xFF;
+            unsigned colori = x % 3;
+            //red
+            bufout[2] = rpix0;
+            bufout[3] = rpix1;
+            //green
+            bufout[4] = gpix0;
+            bufout[5] = gpix1;
+            //blue
+            bufout[6] = bpix0;
+            bufout[7] = bpix1;
             bufout += 8;
         }
     }
@@ -813,7 +880,7 @@ gst_toupcam_src_fill (GstPushSrc * psrc, GstBuffer * buf)
     gst_buffer_map (buf, &minfo, GST_MAP_WRITE);
 
     ToupcamFrameInfoV2 info = { 0 };
-    if (raw) {
+    if (src->raw) {
         /*
         RGBA, 16 bit => 4 * 2 => 64 bit
         Source data raw => densely packed into 16 bit areas
@@ -822,20 +889,17 @@ gst_toupcam_src_fill (GstPushSrc * psrc, GstBuffer * buf)
         //memset(minfo.data, 0x60, 5440 * 3648 * 4 * 1);
 
         // From the grabber source we get 1 progressive frame
-        printf("pulling new image\n");
+        printf("pulling raw image\n");
         HRESULT hr = Toupcam_PullImageV2(src->hCam, &raw_buff, 0, &info);
         if (FAILED(hr)) {
             GST_ERROR_OBJECT (src, "failed to pull image, hr = %08x", hr);
             gst_buffer_unmap (buf, &minfo);
             return GST_FLOW_ERROR;
         }
-        //memset(minfo.data, 0x80, 5440 * 3648 * 3);
-        //memset(minfo.data, 0x60, 5440 * 3648 * 2);
-        //memset(minfo.data, 0x40, 5440 * 3648 * 1);
-        //memset(minfo.data, 0x40, 1024 * 1);
         
         printf("decoding image\n");
         GBRG12_to_ARGB64_x4(src, raw_buff, minfo.data);
+        //memset(minfo.data, 0x80, src->nWidth * src->nHeight * 7);
 #if 1
     /*
     0: 5440 x 3648
@@ -853,9 +917,20 @@ gst_toupcam_src_fill (GstPushSrc * psrc, GstBuffer * buf)
         fclose(fp);
     }
 #endif
+    } else if (src->x16) {
+        printf("pulling x16 image\n");
+        HRESULT hr = Toupcam_PullImageV2(src->hCam, &raw_buff, 48, &info);
+        if (FAILED(hr)) {
+            GST_ERROR_OBJECT (src, "failed to pull image, hr = %08x", hr);
+            gst_buffer_unmap (buf, &minfo);
+            return GST_FLOW_ERROR;
+        }
+        
+        printf("decoding image\n");
+        RGB48_to_ARGB64_x4(src, raw_buff, minfo.data);
         
     } else {
-        printf("pulling new image\n");
+        printf("pulling x8 image\n");
         HRESULT hr = Toupcam_PullImageV2(src->hCam, minfo.data, 24, &info);
         if (FAILED(hr)) {
             GST_ERROR_OBJECT (src, "failed to pull image, hr = %08x", hr);

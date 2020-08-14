@@ -7,11 +7,6 @@ What it is
 This is a source element for GStreamer 1.0 for live acquisition from a camera that uses the 
 toupcam SDK (https://en.ids-imaging.com/downloads.html).
 
-Comments
---------
-
- - It supports just colour of one type
-
 
 McMaster WIP
 --------
@@ -52,6 +47,8 @@ McMaster WIP
 
 Building
 --------
+
+OLD INSTRUCTIONS. Follow above
 
 Building on linux is tested using the autogen script.
 Tested with toupcamsdk Apr 2020 on Ubuntu 18.04 64 bit.

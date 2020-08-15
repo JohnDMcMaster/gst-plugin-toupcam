@@ -20,11 +20,11 @@ Install
     # Linux dell 5.4.0-26-generic #30-Ubuntu SMP Mon Apr 20 16:58:30 UTC 2020 x86_64 x86_64 x86_64 GNU/Linux
     # Note 1.8.3 tested working on reference laptop, but 1.16.2 on 20.04
     # Raspbian GNU/Linux 10 (buster), tested on 14th Aug 2020
-    sudo apt-get install autoconf
+    sudo apt-get install -y autoconf
     sudo apt-get install -y libtool
     sudo apt-get install -y dpkg-dev devscripts
     # Takes a while
-    sudo apt-get install gstreamer1.0-tools
+    sudo apt-get install -y gstreamer1.0-tools
     sudo apt-get install -y libgstreamer-plugins-base1.0-dev
 
     cd ~

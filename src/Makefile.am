@@ -3,7 +3,7 @@
 plugin_LTLIBRARIES = libgsttoupcamsrc.la
 
 # Path to installation of the uEye SDK 
-TOUPCAM_CFLAGS = -I/opt/toupcamsdk/inc
+TOUPCAM_CFLAGS = -I/opt/toupcamsdk/inc -Werror
 TOUPCAM_LIBS = -ltoupcam
 
 # sources used to compile this plug-in

@@ -24,47 +24,55 @@ typedef struct _GstToupCamSrcClass GstToupCamSrcClass;
 
 struct _GstToupCamSrc
 {
-  GstPushSrc base_toupcam_src;
+    GstPushSrc base_toupcam_src;
 
-  // device
-  HToupcam hCam;  // device handle
-  gboolean cameraPresent;
-  gboolean raw;
-  gboolean x16;
-  gint esize;
-  gint nWidth;
-  gint nHeight;
-  gint nBitsPerPixel;
-  gint nBytesPerPixel;
-  gint nPitch;   // Stride in bytes between lines
-  gint nImageSize;  // Image size in bytes
-  gint m_total;
-  gint gst_stride;  // Stride/pitch for the GStreamer buffer
+    // device
+    HToupcam hCam;  // device handle
+    gboolean cameraPresent;
+    gboolean raw;
+    gboolean x16;
+    gint esize;
+    gint nWidth;
+    gint nHeight;
+    gint image_bytes_in;
+    gint bytes_per_pix_in;
+    gint bits_per_pix_out;
+    gint bytes_per_pix_out;
+    gint image_bytes_out;
+    gint m_total;
+    gint gst_stride;  // Stride/pitch for the GStreamer buffer
 
-  // gst properties
-  gdouble framerate;
-  gdouble maxframerate;
-  // library based properties
-  gboolean hflip;
-  gboolean vflip;
-  gboolean auto_exposure;
-  gboolean expotime;
-  gint hue;
-  gint saturation;
-  gint brightness;
-  gint contrast;
-  gint gamma;
+    unsigned char *frame_buff;
 
-  // stream
-  gboolean acq_started;
-  gint n_frames;
-  gint total_timeouts;
-  GstClockTime duration;
-  GstClockTime last_frame_time;
-  gint imagesAvailable;
-  gint imagesPulled;
-  GMutex mutex;
-  GCond cond;
+    // gst properties
+    gdouble framerate;
+    gdouble maxframerate;
+    // library based properties
+    //bool
+    int hflip;
+    //bool
+    int vflip;
+    //bool
+    int auto_exposure;
+    //unsigned
+    unsigned expotime;
+    //ints
+    int hue;
+    int saturation;
+    int brightness;
+    int contrast;
+    int gamma;
+
+    // stream
+    gboolean acq_started;
+    gint n_frames;
+    gint total_timeouts;
+    GstClockTime duration;
+    GstClockTime last_frame_time;
+    gint imagesAvailable;
+    gint imagesPulled;
+    GMutex mutex;
+    GCond cond;
 };
 
 struct _GstToupCamSrcClass

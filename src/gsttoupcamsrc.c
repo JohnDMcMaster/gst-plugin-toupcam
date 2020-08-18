@@ -30,6 +30,8 @@
 #include <gst/base/gstpushsrc.h>
 #include <gst/video/video.h>
 
+#include <stdlib.h>
+
 #include "toupcam.h"
 
 #include "gsttoupcamsrc.h"
@@ -72,7 +74,6 @@ enum
     PROP_GAMMA,
 };
 
-#define PROP_CAMERAPRESENT       FALSE
 
 // Put matching type text in the pad template below
 
@@ -222,7 +223,6 @@ static void
 gst_toupcam_src_reset (GstToupCamSrc * src)
 {
     src->hCam = 0;
-    src->cameraPresent = FALSE;
     src->imagesAvailable = 0;
     src->imagesPulled = 0;
     src->total_timeouts = 0;
@@ -239,38 +239,63 @@ gst_toupcam_src_set_property (GObject * object, guint property_id,
     src = GST_TOUPCAM_SRC (object);
 
     switch (property_id) {
-    case PROP_CAMERAPRESENT:
-        src->cameraPresent = g_value_get_boolean (value);
-        break;
     case PROP_ESIZE:
+        //Only set before start
         src->esize = g_value_get_int (value);
         break;
     case PROP_HFLIP:
         src->hflip = g_value_get_boolean (value);
+        if (src->hCam) {
+            Toupcam_put_HFlip(src->hCam, src->hflip);
+        }
         break;
     case PROP_VFLIP:
         src->vflip = g_value_get_boolean (value);
+        if (src->hCam) {
+            Toupcam_put_VFlip(src->hCam, src->vflip);
+        }
         break;
     case PROP_AUTO_EXPOSURE:
         src->auto_exposure = g_value_get_boolean (value);
+        if (src->hCam) {
+            Toupcam_put_AutoExpoEnable(src->hCam, src->auto_exposure);
+        }
         break;
     case PROP_EXPOTIME:
         src->expotime = g_value_get_int (value);
+        if (src->hCam) {
+            Toupcam_put_ExpoTime(src->hCam, src->expotime);
+        }
         break;
     case PROP_HUE:
         src->hue = g_value_get_int (value);
+        if (src->hCam) {
+            Toupcam_put_Hue(src->hCam, src->hue);
+        }
         break;
     case PROP_SATURATION:
         src->saturation = g_value_get_int (value);
+        if (src->hCam) {
+            Toupcam_put_Saturation(src->hCam, src->saturation);
+        }
         break;
     case PROP_BRIGHTNESS:
         src->brightness = g_value_get_int (value);
+        if (src->hCam) {
+            Toupcam_put_Brightness(src->hCam, src->brightness);
+        }
         break;
     case PROP_CONTRAST:
         src->contrast = g_value_get_int (value);
+        if (src->hCam) {
+            Toupcam_put_Contrast(src->hCam, src->contrast);
+        }
         break;
     case PROP_GAMMA:
         src->gamma = g_value_get_int (value);
+        if (src->hCam) {
+            Toupcam_put_Gamma(src->hCam, src->gamma);
+        }
         break;
     default:
         G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
@@ -289,38 +314,65 @@ gst_toupcam_src_get_property (GObject * object, guint property_id,
 
     switch (property_id) {
     case PROP_CAMERAPRESENT:
-        g_value_set_boolean (value, src->cameraPresent);
+        g_value_set_boolean (value, src->hCam != NULL ? TRUE : FALSE);
         break;
     case PROP_ESIZE:
         g_value_set_int (value, src->esize);
         break;
     case PROP_HFLIP: 
+        if (src->hCam) {
+            Toupcam_get_HFlip(src->hCam, &src->hflip);
+        }
         g_value_set_boolean (value, src->hflip);
         break;
     case PROP_VFLIP:
+        if (src->hCam) {
+            Toupcam_get_HFlip(src->hCam, &src->vflip);
+        }
         g_value_set_boolean (value, src->vflip);
         break;
     case PROP_AUTO_EXPOSURE:
+        if (src->hCam) {
+            Toupcam_get_AutoExpoEnable(src->hCam, &src->auto_exposure);
+        }
         g_value_set_boolean (value, src->auto_exposure);
         break;
     case PROP_EXPOTIME:
+        if (src->hCam) {
+            Toupcam_get_ExpoTime(src->hCam, &src->expotime);
+        }
         g_value_set_int (value, src->expotime);
         break;
 
     case PROP_HUE:
         g_value_set_int (value, src->hue);
+        if (src->hCam) {
+            Toupcam_put_Hue(src->hCam, src->hue);
+        }
         break;
     case PROP_SATURATION:
         g_value_set_int (value, src->saturation);
+        if (src->hCam) {
+            Toupcam_put_Saturation(src->hCam, src->saturation);
+        }
         break;
     case PROP_BRIGHTNESS:
         g_value_set_int (value, src->brightness);
+        if (src->hCam) {
+            Toupcam_put_Brightness(src->hCam, src->brightness);
+        }
         break;
     case PROP_CONTRAST:
         g_value_set_int (value, src->contrast);
+        if (src->hCam) {
+            Toupcam_put_Contrast(src->hCam, src->contrast);
+        }
         break;
     case PROP_GAMMA:
         g_value_set_int (value, src->gamma);
+        if (src->hCam) {
+            Toupcam_put_Gamma(src->hCam, src->gamma);
+        }
         break;
 
     default:
@@ -611,15 +663,31 @@ gst_toupcam_src_start (GstBaseSrc * bsrc)
 
 
     // We support just colour of one type, BGR 24-bit, I am not attempting to support all camera types
-    src->nBitsPerPixel = 24;
+    if (src->raw || src->x16) {
+        src->bits_per_pix_out = 64;
+        src->bytes_per_pix_out = 8;
+        src->bytes_per_pix_in = 6;
+    } else {
+        src->bits_per_pix_out = 24;
+        src->bytes_per_pix_out = 3;
+        src->bytes_per_pix_in = 3;
+    }
+
     unsigned nFrame, nTime, nTotalFrame;
     Toupcam_get_FrameRate(src->hCam, &nFrame, &nTime, &nTotalFrame);
     src->framerate = nFrame * 1000.0 / nTime;
     src->duration = 1000000000.0/src->framerate;
+    
+    src->image_bytes_in = src->nWidth * src->nHeight * src->bytes_per_pix_in;
+    src->image_bytes_out = src->nWidth * src->nHeight * src->bytes_per_pix_out;
+    //GST_DEBUG_OBJECT (src, "Image is %d x %d, pitch %d, bpp %d, Bpp %d", src->nWidth, src->nHeight, src->bits_per_pix_out, src->bytes_per_pix_out);
+    printf("Image %d w x %d h, in %d bytes / pix => %d bytes (%0.1f MB), out %d bytes / pix => %d bytes (%0.1f MB)",
+            src->nWidth, src->nHeight,
+            src->bytes_per_pix_in, src->image_bytes_in, src->image_bytes_in / 1e6,
+            src->bytes_per_pix_out, src->image_bytes_out, src->image_bytes_out / 1e6);
 
-    src->nBytesPerPixel = (src->nBitsPerPixel+1)/8;
-    src->nImageSize = src->nWidth * src->nHeight * src->nBytesPerPixel;
-    GST_DEBUG_OBJECT (src, "Image is %d x %d, pitch %d, bpp %d, Bpp %d", src->nWidth, src->nHeight, src->nPitch, src->nBitsPerPixel, src->nBytesPerPixel);
+    //TODO: move from static buff to frame_buff
+    src->frame_buff = NULL;
 
     return TRUE;
 
@@ -725,41 +793,9 @@ unsupported_caps:
     return FALSE;
 }
 
-void GBRG12_to_ARGB64(GstToupCamSrc *src, const unsigned char *bufin, unsigned char *bufout) {
-    //Most channels are unused
-    memset(bufout, 0x00, src->nWidth * src->nHeight * 4 * 2);
-    memset(bufout, 0x00, src->nWidth * src->nHeight * 4);
-    //return;
 
-    for (unsigned y = 0; y < src->nHeight; ++y) {
-        for (unsigned x = 0; x < src->nWidth; ++x) {
-            //uint16_t pix = (bufin[1] << 8) | bufin[0];
-            unsigned colori = x % 4;
-            //blue
-            if (colori == 1) {
-                bufout[6] = bufin[0];
-                bufout[7] = bufin[1];
-            //red
-            } else if (colori == 1) {
-                bufout[0] = bufin[0];
-                bufout[1] = bufin[1];
-            //green
-            } else {
-                bufout[4] = bufin[0];
-                bufout[5] = bufin[1];
-            }
-            bufin += 2;
-            bufout += 8;
-        }
-    }
-}
-
+//raw to common format
 void GBRG12_to_ARGB64_x4(GstToupCamSrc *src, const unsigned char *bufin, unsigned char *bufout) {
-    //Most channels are unused
-    //memset(bufout, 0x00, src->nWidth * src->nHeight * 4);
-    //memset(bufout, 0x00, 16);
-    //return;
-
     for (unsigned y = 0; y < src->nHeight; ++y) {
         for (unsigned x = 0; x < src->nWidth; ++x) {
             uint16_t pix16 = (bufin[1] << 12) | (bufin[0] << 4);
@@ -789,17 +825,8 @@ void GBRG12_to_ARGB64_x4(GstToupCamSrc *src, const unsigned char *bufin, unsigne
     }
 }
 
+//high def to common format
 void RGB48_to_ARGB64_x4(GstToupCamSrc *src, const unsigned char *bufin, unsigned char *bufout) {
-    //return;
-    //Most channels are unused
-    //memset(bufout, 0x00, src->nWidth * src->nHeight * 4 * 2);
-    //memset(bufout, 0x80, src->nWidth * src->nHeight * 4);
-    //memset(bufout, 0x60, src->nWidth * src->nHeight * 3);
-    //memset(bufout, 0x40, src->nWidth * src->nHeight * 2);
-    //memset(bufout, 0x20, src->nWidth * src->nHeight * 1);
-    //return;
-    //return;
-
     for (unsigned y = 0; y < src->nHeight; ++y) {
         for (unsigned x = 0; x < src->nWidth; ++x) {
             uint16_t rpix16 = (bufin[1] << 12) | (bufin[0] << 4);
@@ -818,7 +845,6 @@ void RGB48_to_ARGB64_x4(GstToupCamSrc *src, const unsigned char *bufin, unsigned
             uint8_t gpix0 = gpix16 & 0xFF;
             uint8_t bpix1 = bpix16 >> 8;
             uint8_t bpix0 = bpix16 & 0xFF;
-            unsigned colori = x % 3;
             //red
             bufout[2] = rpix0;
             bufout[3] = rpix1;
@@ -833,23 +859,8 @@ void RGB48_to_ARGB64_x4(GstToupCamSrc *src, const unsigned char *bufin, unsigned
     }
 }
 
-// Override the push class fill fn, using the default create and alloc fns.
-// buf is the buffer to fill, it may be allocated in alloc or from a downstream element.
-// Other functions such as deinterlace do not work with this type of buffer.
-static GstFlowReturn
-gst_toupcam_src_fill (GstPushSrc * psrc, GstBuffer * buf)
+static GstFlowReturn wait_new_frame(GstToupCamSrc *src)
 {
-    static unsigned char raw_buff[5440 * 3648 * 4 * 2];
-
-    printf("\n");
-    GstToupCamSrc *src = GST_TOUPCAM_SRC (psrc);
-    GstMapInfo minfo;
-
-    printf("waiting for new image\n");
-
-    // lock next (raw) image for read access, convert it to the desired
-    // format and unlock it again, so that grabbing can go on
-
     // Wait for the next image to be ready
     int timeout = 5;
     while (src->imagesAvailable <= src->imagesPulled) {
@@ -871,13 +882,24 @@ gst_toupcam_src_fill (GstPushSrc * psrc, GstBuffer * buf)
                 return GST_FLOW_ERROR;
             }
     }
+    return GST_FLOW_OK;
+}
 
-    //  successfully returned an image
-    // ----------------------------------------------------------
-
+static GstFlowReturn pull_decode_frame(GstToupCamSrc *src, GstBuffer * buf)
+{
+    static unsigned char raw_buff[5440 * 3648 * 4 * 2];
     // Copy image to buffer in the right way
+    GstMapInfo minfo;
 
+    //minfo size 4096, maxsize 4103, flags 0x00000002
     gst_buffer_map (buf, &minfo, GST_MAP_WRITE);
+    printf("minfo size %lu, maxsize %lu, flags 0x%08X\n", minfo.size, minfo.maxsize, minfo.flags);
+    //XXX: debugging crash
+    if (minfo.size != src->image_bytes_out) {
+        gst_buffer_unmap (buf, &minfo);
+        printf("bad minfo size. Expect %d, got %lu\n", src->image_bytes_out, minfo.size);
+        return GST_FLOW_ERROR;
+    }
 
     ToupcamFrameInfoV2 info = { 0 };
     if (src->raw) {
@@ -887,6 +909,12 @@ gst_toupcam_src_fill (GstPushSrc * psrc, GstBuffer * buf)
         */
         //memset(minfo.data, 0x80, 5440 * 3648 * 4 * 2);
         //memset(minfo.data, 0x60, 5440 * 3648 * 4 * 1);
+
+        if (sizeof(raw_buff) < src->image_bytes_in) {
+            gst_buffer_unmap (buf, &minfo);
+            printf("insufficient frame buffer size. Need %d, got %d\n", src->image_bytes_in, src->image_bytes_in);
+            return GST_FLOW_ERROR;
+        }
 
         // From the grabber source we get 1 progressive frame
         printf("pulling raw image\n");
@@ -900,24 +928,21 @@ gst_toupcam_src_fill (GstPushSrc * psrc, GstBuffer * buf)
         printf("decoding image\n");
         GBRG12_to_ARGB64_x4(src, raw_buff, minfo.data);
         //memset(minfo.data, 0x80, src->nWidth * src->nHeight * 7);
-#if 1
-    /*
-    0: 5440 x 3648
-    0: 2.4 x 2.4 um
-    1: 2736 x 1824
-    1: 4.8 x 4.8 um
-    2: 1824 x 1216
-    2: 7.2 x 7.2 um
-    */
+#if 0
     {
         FILE *fp;
 
         fp = fopen("raw.bin", "wb");
-        fwrite(minfo.data, 1, 5440 * 3648 * 3, fp);
+        fwrite(minfo.data, 1, src->image_bytes_out, fp);
         fclose(fp);
     }
 #endif
     } else if (src->x16) {
+        if (sizeof(raw_buff) < src->image_bytes_in) {
+            printf("insufficient frame buffer size. Need %d, got %d\n", src->image_bytes_in, src->image_bytes_in);
+            return GST_FLOW_ERROR;
+        }
+
         printf("pulling x16 image\n");
         HRESULT hr = Toupcam_PullImageV2(src->hCam, &raw_buff, 48, &info);
         if (FAILED(hr)) {
@@ -928,7 +953,6 @@ gst_toupcam_src_fill (GstPushSrc * psrc, GstBuffer * buf)
         
         printf("decoding image\n");
         RGB48_to_ARGB64_x4(src, raw_buff, minfo.data);
-        
     } else {
         printf("pulling x8 image\n");
         HRESULT hr = Toupcam_PullImageV2(src->hCam, minfo.data, 24, &info);
@@ -938,13 +962,44 @@ gst_toupcam_src_fill (GstPushSrc * psrc, GstBuffer * buf)
             return GST_FLOW_ERROR;
         }
     }
-    
+
+    gst_buffer_unmap (buf, &minfo);
+
     src->imagesPulled += 1;
     /* After we get the image data, we can do anything for the data we want to do */
     printf("pull image ok, total = %u, resolution = %u x %u\n", ++src->m_total, info.width, info.height);
-    printf("flag %u, seq %u, us %u\n", info.flag, info.seq, info.timestamp);
+    printf("flag %u, seq %u, us %llu\n", info.flag, info.seq, info.timestamp);
 
-    gst_buffer_unmap (buf, &minfo);
+    return GST_FLOW_OK;
+}
+
+// Override the push class fill fn, using the default create and alloc fns.
+// buf is the buffer to fill, it may be allocated in alloc or from a downstream element.
+// Other functions such as deinterlace do not work with this type of buffer.
+static GstFlowReturn
+gst_toupcam_src_fill (GstPushSrc * psrc, GstBuffer * buf)
+{
+
+    printf("\n");
+    GstToupCamSrc *src = GST_TOUPCAM_SRC (psrc);
+
+    printf("waiting for new image\n");
+
+    // lock next (raw) image for read access, convert it to the desired
+    // format and unlock it again, so that grabbing can go on
+
+    if (wait_new_frame(src) != GST_FLOW_OK) {
+        return GST_FLOW_ERROR;
+    }
+
+    //  successfully returned an image
+    // ----------------------------------------------------------
+
+    if (pull_decode_frame(src, buf) != GST_FLOW_OK) {
+        return GST_FLOW_ERROR;
+    }
+
+
 
     /*
     // If we do not use gst_base_src_set_do_timestamp() we need to add timestamps manually

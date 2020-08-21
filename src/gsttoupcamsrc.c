@@ -55,6 +55,7 @@ static GstCaps *gst_toupcam_src_get_caps (GstBaseSrc * src, GstCaps * filter);
 static gboolean gst_toupcam_src_set_caps (GstBaseSrc * src, GstCaps * caps);
 
 static GstFlowReturn gst_toupcam_src_fill (GstPushSrc * src, GstBuffer * buf);
+static GstFlowReturn gst_toupcam_src_alloc (GstPushSrc * psrc, GstBuffer ** buf);
 
 //static GstCaps *gst_toupcam_src_create_caps (GstToupCamSrc * src);
 static void gst_toupcam_src_reset (GstToupCamSrc * src);
@@ -151,6 +152,7 @@ gst_toupcam_src_class_init (GstToupCamSrcClass * klass)
     gstbasesrc_class->get_caps = GST_DEBUG_FUNCPTR (gst_toupcam_src_get_caps);
     gstbasesrc_class->set_caps = GST_DEBUG_FUNCPTR (gst_toupcam_src_set_caps);
 
+    gstpushsrc_class->alloc   = GST_DEBUG_FUNCPTR (gst_toupcam_src_alloc);
     gstpushsrc_class->fill   = GST_DEBUG_FUNCPTR (gst_toupcam_src_fill);
     GST_DEBUG ("Using gst_toupcam_src_fill.");
 
@@ -213,6 +215,11 @@ gst_toupcam_src_init (GstToupCamSrc * src)
 
     /* override default of BYTES to operate in time mode */
     gst_base_src_set_format (GST_BASE_SRC (src), GST_FORMAT_TIME);
+
+    //siddique mu800 test
+    //Image 3264 w x 2448 h, in 3 bytes / pix => 23970816 bytes (24,0 MB), out 3 bytes / pix => 23970816 bytes (24,0 MB)
+    //gst_base_src_set_blocksize(GST_BASE_SRC (src), 23970816);
+    //gst_base_src_set_blocksize(GST_BASE_SRC (src), src->image_bytes_out);
 
     g_mutex_init(&src->mutex);
     g_cond_init(&src->cond);
@@ -429,6 +436,88 @@ static void EventCallback(unsigned nEvent, void* pCallbackCtx)
     printf("calllback %u (want %u), images now %u\n", nEvent, TOUPCAM_EVENT_IMAGE, src->imagesAvailable);
 }
 
+void gst_toupcam_pdebug(GstToupCamSrc *src) {
+    int itmp;
+    short stmp;
+    unsigned short ustmp;
+    char buff[64];
+
+    printf("Camera info\n");
+    printf("  max bit depth: %d\n", Toupcam_get_MaxBitDepth(src->hCam));
+    printf("  max fan speed: %d\n", Toupcam_get_FanMaxSpeed(src->hCam));
+    printf("  max frame speed: %d\n", Toupcam_get_MaxSpeed(src->hCam));
+    printf("  mono mode: %d\n", Toupcam_get_MonoMode(src->hCam));
+    int resn = Toupcam_get_StillResolutionNumber(src->hCam);
+    printf("  still resolution number: %d\n", resn);
+    for (int resi = 0; resi < resn; ++resi) {
+        int width, height;
+        if (!FAILED(Toupcam_get_StillResolution(src->hCam, resi, &width, &height))) {
+            printf("    %u: %i x %i\n", resi, width, height);
+        }
+        float pixx, pixy;
+        if (!FAILED(Toupcam_get_PixelSize(src->hCam, resi, &pixx, &pixy))) {
+            printf("    %u: %0.1f x %0.1f um\n", resi, pixx, pixy);
+        }
+    }
+
+    if (!FAILED(Toupcam_get_Negative(src->hCam, &itmp))) {
+        printf("  negative: %d\n", itmp);
+    }
+    if (!FAILED(Toupcam_get_Chrome(src->hCam, &itmp))) {
+        printf("  chrome: %d\n", itmp);
+    }
+    if (!FAILED(Toupcam_get_HZ(src->hCam, &itmp))) {
+        printf("  hz: %d\n", itmp);
+    }
+    if (!FAILED(Toupcam_get_Mode(src->hCam, &itmp))) {
+        printf("  mode: %d\n", itmp);
+    }
+    if (!FAILED(Toupcam_get_RealTime(src->hCam, &itmp))) {
+        printf("  real time: %d\n", itmp);
+    }
+
+    if (!FAILED(Toupcam_get_Temperature(src->hCam, &stmp))) {
+        printf("  temperature: %d\n", stmp);
+    }
+    if (!FAILED(Toupcam_get_Revision(src->hCam, &ustmp))) {
+        printf("  revision: %d\n", ustmp);
+    }
+
+    if (!FAILED(Toupcam_get_SerialNumber(src->hCam, buff))) {
+        printf("  serial number: %s\n", buff);
+    }
+    if (!FAILED(Toupcam_get_FwVersion(src->hCam, buff))) {
+        printf("  fw version: %s\n", buff);
+    }
+    if (!FAILED(Toupcam_get_HwVersion(src->hCam, buff))) {
+        printf("  hw version: %s\n", buff);
+    }
+    if (!FAILED(Toupcam_get_ProductionDate(src->hCam, buff))) {
+        printf("  production date: %s\n", buff);
+    }
+    if (!FAILED(Toupcam_get_FpgaVersion(src->hCam, buff))) {
+        printf("  fpga version: %s\n", buff);
+    }
+    /*
+    if (!FAILED(Toupcam_get_Name(id, buff))) {
+        printf("  name: %s\n", buff);
+    }
+    */
+    //0 => #define TOUPCAM_PIXELFORMAT_RAW8             0x00
+    Toupcam_get_Option(src->hCam, TOUPCAM_OPTION_PIXEL_FORMAT, &itmp);
+        printf("  pixel format: %i\n", itmp);
+
+
+    char nFourCC[4];
+    unsigned bitsperpixel;
+    Toupcam_get_RawFormat(src->hCam, (unsigned *)&nFourCC, &bitsperpixel);
+    //raw code GBRG, bpp 8
+    //needs this to get the full 12 bit
+    //Toupcam_put_Option(src->hCam, TOUPCAM_OPTION_PIXEL_FORMAT, TOUPCAM_PIXELFORMAT_RAW12);
+    //raw code GBRG, bpp 12
+    printf("  raw code %c%c%c%c, bpp %u\n", nFourCC[0], nFourCC[1], nFourCC[2], nFourCC[3], bitsperpixel);
+}
+
 static gboolean
 gst_toupcam_src_start (GstBaseSrc * bsrc)
 {
@@ -450,95 +539,11 @@ gst_toupcam_src_start (GstBaseSrc * bsrc)
     src->hCam = Toupcam_Open(NULL);
     if (NULL == src->hCam)
     {
-        printf("failed open\n");
         GST_ERROR_OBJECT(src, "No ToupCam device found or open failed");
         goto fail;
     }
 
-    if (1) {
-        int itmp;
-        short stmp;
-        unsigned short ustmp;
-        char buff[64];
-
-        printf("Camera info\n");
-        printf("  max bit depth: %d\n", Toupcam_get_MaxBitDepth(src->hCam));
-        printf("  max fan speed: %d\n", Toupcam_get_FanMaxSpeed(src->hCam));
-        printf("  max frame speed: %d\n", Toupcam_get_MaxSpeed(src->hCam));
-        printf("  mono mode: %d\n", Toupcam_get_MonoMode(src->hCam));
-        int resn = Toupcam_get_StillResolutionNumber(src->hCam);
-        printf("  still resolution number: %d\n", resn);
-        for (int resi = 0; resi < resn; ++resi) {
-            int width, height;
-            if (!FAILED(Toupcam_get_StillResolution(src->hCam, resi, &width, &height))) {
-                printf("    %u: %i x %i\n", resi, width, height);
-            }
-            float pixx, pixy;
-            if (!FAILED(Toupcam_get_PixelSize(src->hCam, resi, &pixx, &pixy))) {
-                printf("    %u: %0.1f x %0.1f um\n", resi, pixx, pixy);
-            }
-        }
-
-        if (!FAILED(Toupcam_get_Negative(src->hCam, &itmp))) {
-            printf("  negative: %d\n", itmp);
-        }
-        if (!FAILED(Toupcam_get_Chrome(src->hCam, &itmp))) {
-            printf("  chrome: %d\n", itmp);
-        }
-        if (!FAILED(Toupcam_get_HZ(src->hCam, &itmp))) {
-            printf("  hz: %d\n", itmp);
-        }
-        if (!FAILED(Toupcam_get_Mode(src->hCam, &itmp))) {
-            printf("  mode: %d\n", itmp);
-        }
-        if (!FAILED(Toupcam_get_RealTime(src->hCam, &itmp))) {
-            printf("  real time: %d\n", itmp);
-        }
-
-        if (!FAILED(Toupcam_get_Temperature(src->hCam, &stmp))) {
-            printf("  temperature: %d\n", stmp);
-        }
-        if (!FAILED(Toupcam_get_Revision(src->hCam, &ustmp))) {
-            printf("  revision: %d\n", ustmp);
-        }
-
-        if (!FAILED(Toupcam_get_SerialNumber(src->hCam, buff))) {
-            printf("  serial number: %s\n", buff);
-        }
-        if (!FAILED(Toupcam_get_FwVersion(src->hCam, buff))) {
-            printf("  fw version: %s\n", buff);
-        }
-        if (!FAILED(Toupcam_get_HwVersion(src->hCam, buff))) {
-            printf("  hw version: %s\n", buff);
-        }
-        if (!FAILED(Toupcam_get_ProductionDate(src->hCam, buff))) {
-            printf("  production date: %s\n", buff);
-        }
-        if (!FAILED(Toupcam_get_FpgaVersion(src->hCam, buff))) {
-            printf("  fpga version: %s\n", buff);
-        }
-        /*
-        if (!FAILED(Toupcam_get_Name(id, buff))) {
-            printf("  name: %s\n", buff);
-        }
-        */
-        //0 => #define TOUPCAM_PIXELFORMAT_RAW8             0x00
-        Toupcam_get_Option(src->hCam, TOUPCAM_OPTION_PIXEL_FORMAT, &itmp);
-            printf("  pixel format: %i\n", itmp);
-
-
-        char nFourCC[4];
-        unsigned bitsperpixel;
-        Toupcam_get_RawFormat(src->hCam, (unsigned *)&nFourCC, &bitsperpixel);
-        //raw code GBRG, bpp 8
-        //needs this to get the full 12 bit
-        //Toupcam_put_Option(src->hCam, TOUPCAM_OPTION_PIXEL_FORMAT, TOUPCAM_PIXELFORMAT_RAW12);
-        //raw code GBRG, bpp 12
-        printf("  raw code %c%c%c%c, bpp %u\n", nFourCC[0], nFourCC[1], nFourCC[2], nFourCC[3], bitsperpixel);
-    }
-
-
-    src->cameraPresent = TRUE;
+    //gst_toupcam_pdebug(src);
 
     HRESULT hr;
 
@@ -559,51 +564,47 @@ gst_toupcam_src_start (GstBaseSrc * bsrc)
         //can set raw8 and raw12, but not raw16
         //default raw8
         printf("setting up raw\n");
-        hr = Toupcam_put_Option(src->hCam, TOUPCAM_OPTION_PIXEL_FORMAT, TOUPCAM_PIXELFORMAT_RAW12);
         if (1) {
-        if (FAILED(hr)) {
-            GST_ERROR_OBJECT (src, "failed to set pixel format, hr = %08x", hr);
-            goto fail;
-        }
+            hr = Toupcam_put_Option(src->hCam, TOUPCAM_OPTION_PIXEL_FORMAT, TOUPCAM_PIXELFORMAT_RAW12);
+            if (FAILED(hr)) {
+                GST_ERROR_OBJECT (src, "failed to set pixel format, hr = %08x", hr);
+                goto fail;
+            }
         }
         //no output when this is enabled...why?
         if (1) {
-        //enable raw
-        hr = Toupcam_put_Option(src->hCam, TOUPCAM_OPTION_RAW, 1);
-        if (FAILED(hr)) {
-            GST_ERROR_OBJECT (src, "failed to enable raw, hr = %08x", hr);
-            goto fail;
-        }
+            //enable raw
+            hr = Toupcam_put_Option(src->hCam, TOUPCAM_OPTION_RAW, 1);
+            if (FAILED(hr)) {
+                GST_ERROR_OBJECT (src, "failed to enable raw, hr = %08x", hr);
+                goto fail;
+            }
         }
         if (1) {
-        //16 bit output
-        hr = Toupcam_put_Option(src->hCam, TOUPCAM_OPTION_BITDEPTH, 1);
-        if (FAILED(hr)) {
-            GST_ERROR_OBJECT (src, "failed to enable 16 bit, hr = %08x", hr);
-            goto fail;
-        }
+            //16 bit output
+            hr = Toupcam_put_Option(src->hCam, TOUPCAM_OPTION_BITDEPTH, 1);
+            if (FAILED(hr)) {
+                GST_ERROR_OBJECT (src, "failed to enable 16 bit, hr = %08x", hr);
+                goto fail;
+            }
         }
     } else if (src->x16) {
         //can set raw8 and raw12, but not raw16
         //default raw8
         printf("setting up x16\n");
 
-        if (1) {
         //16 bit output
         hr = Toupcam_put_Option(src->hCam, TOUPCAM_OPTION_BITDEPTH, 1);
         if (FAILED(hr)) {
             GST_ERROR_OBJECT (src, "failed to enable 16 bit, hr = %08x", hr);
             goto fail;
         }
-        }
 
-        if (1) {
         //RGB48
         hr = Toupcam_put_Option(src->hCam, TOUPCAM_OPTION_RGB, 1);
         if (FAILED(hr)) {
             GST_ERROR_OBJECT (src, "failed to enable raw, hr = %08x", hr);
             goto fail;
-        }
         }
     } else {
         printf("setting up regular\n");
@@ -628,11 +629,6 @@ gst_toupcam_src_start (GstBaseSrc * bsrc)
         Toupcam_put_ExpoTime(src->hCam, src->expotime);
     }
 
-    hr = Toupcam_StartPullModeWithCallback(src->hCam, EventCallback, src);
-    if (FAILED(hr)) {
-        GST_ERROR_OBJECT (src, "failed to start camera, hr = %08x", hr);
-        goto fail;
-    }
 
     // Colour format
 
@@ -688,6 +684,12 @@ gst_toupcam_src_start (GstBaseSrc * bsrc)
 
     //TODO: move from static buff to frame_buff
     src->frame_buff = NULL;
+
+    hr = Toupcam_StartPullModeWithCallback(src->hCam, EventCallback, src);
+    if (FAILED(hr)) {
+        GST_ERROR_OBJECT (src, "failed to start camera, hr = %08x", hr);
+        goto fail;
+    }
 
     return TRUE;
 
@@ -973,6 +975,38 @@ static GstFlowReturn pull_decode_frame(GstToupCamSrc *src, GstBuffer * buf)
     return GST_FLOW_OK;
 }
 
+static GstFlowReturn gst_toupcam_src_alloc (GstPushSrc * psrc, GstBuffer ** buf)
+{
+    GstFlowReturn ret;
+
+    GstToupCamSrc *src = GST_TOUPCAM_SRC (psrc);
+
+    /*
+    printf("\n");
+    printf("waiting for new image\n");
+
+    // lock next (raw) image for read access, convert it to the desired
+    // format and unlock it again, so that grabbing can go on
+
+    if (wait_new_frame(src) != GST_FLOW_OK) {
+        return GST_FLOW_ERROR;
+    }
+    */
+
+    //  successfully returned an image
+    // ----------------------------------------------------------
+
+
+    *buf = gst_buffer_new_allocate (NULL, src->image_bytes_out, NULL);
+    if (G_UNLIKELY (*buf == NULL)) {
+       printf("Failed to allocate %u bytes", src->image_bytes_out);
+       ret = GST_FLOW_ERROR;
+    }
+    ret = GST_FLOW_OK;
+
+  return ret;
+}
+
 // Override the push class fill fn, using the default create and alloc fns.
 // buf is the buffer to fill, it may be allocated in alloc or from a downstream element.
 // Other functions such as deinterlace do not work with this type of buffer.
@@ -1014,7 +1048,7 @@ gst_toupcam_src_fill (GstPushSrc * psrc, GstBuffer * buf)
     GST_BUFFER_PTS(buf) = GST_CLOCK_TIME_NONE;
     GST_BUFFER_DTS(buf) = GST_CLOCK_TIME_NONE;
     GST_BUFFER_DURATION(buf) = GST_CLOCK_TIME_NONE;
-    
+
 
     // count frames, and send EOS when required frame number is reached
     GST_BUFFER_OFFSET(buf) = src->n_frames;  // from videotestsrc

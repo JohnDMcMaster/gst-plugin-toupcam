@@ -135,7 +135,7 @@ gst_toupcam_src_class_init (GstToupCamSrcClass * klass)
     gobject_class->finalize = gst_toupcam_src_finalize;
 
     if (raw || x16) {
-        printf("select x16 template");
+        GST_DEBUG("select x16 template");
         gst_element_class_add_pad_template (gstelement_class,
                 gst_static_pad_template_get (&gst_toupcam_src_template_x16));
     } else {
@@ -154,7 +154,7 @@ gst_toupcam_src_class_init (GstToupCamSrcClass * klass)
 
     gstpushsrc_class->alloc   = GST_DEBUG_FUNCPTR (gst_toupcam_src_alloc);
     gstpushsrc_class->fill   = GST_DEBUG_FUNCPTR (gst_toupcam_src_fill);
-    GST_DEBUG ("Using gst_toupcam_src_fill.");
+    GST_DEBUG ("Using gst_toupcam_src_fill");
 
     // Install GObject properties
     // Camera Present property
@@ -433,7 +433,7 @@ static void EventCallback(unsigned nEvent, void* pCallbackCtx)
     {
         GST_DEBUG_OBJECT (src, "event callback: %d\n", nEvent);
     }
-    printf("calllback %u (want %u), images now %u\n", nEvent, TOUPCAM_EVENT_IMAGE, src->imagesAvailable);
+    GST_DEBUG("calllback %u (want %u), images now %u", nEvent, TOUPCAM_EVENT_IMAGE, src->imagesAvailable);
 }
 
 void gst_toupcam_pdebug(GstToupCamSrc *src) {
@@ -526,7 +526,6 @@ gst_toupcam_src_start (GstBaseSrc * bsrc)
     GstToupCamSrc *src = GST_TOUPCAM_SRC (bsrc);
 
     GST_DEBUG_OBJECT (src, "start");
-    printf("start\n");
 
     // Turn on automatic timestamping, if so we do not need to do it manually, BUT there is some evidence that automatic timestamping is laggy
 //    gst_base_src_set_do_timestamp(bsrc, TRUE);
@@ -563,7 +562,7 @@ gst_toupcam_src_start (GstBaseSrc * bsrc)
     if (src->raw) {
         //can set raw8 and raw12, but not raw16
         //default raw8
-        printf("setting up raw\n");
+        GST_DEBUG_OBJECT (src, "setting up raw");
         if (1) {
             hr = Toupcam_put_Option(src->hCam, TOUPCAM_OPTION_PIXEL_FORMAT, TOUPCAM_PIXELFORMAT_RAW12);
             if (FAILED(hr)) {
@@ -591,7 +590,7 @@ gst_toupcam_src_start (GstBaseSrc * bsrc)
     } else if (src->x16) {
         //can set raw8 and raw12, but not raw16
         //default raw8
-        printf("setting up x16\n");
+        GST_DEBUG_OBJECT (src, "setting up x16");
 
         //16 bit output
         hr = Toupcam_put_Option(src->hCam, TOUPCAM_OPTION_BITDEPTH, 1);
@@ -607,7 +606,7 @@ gst_toupcam_src_start (GstBaseSrc * bsrc)
             goto fail;
         }
     } else {
-        printf("setting up regular\n");
+        GST_DEBUG_OBJECT (src, "setting up regular");
         Toupcam_put_Option(src->hCam, TOUPCAM_OPTION_BYTEORDER, TOUPCAM_OPTION_BYTEORDER_RGB);
         Toupcam_put_Hue(src->hCam, src->hue);
         Toupcam_put_Saturation(src->hCam, src->saturation);
@@ -677,7 +676,7 @@ gst_toupcam_src_start (GstBaseSrc * bsrc)
     src->image_bytes_in = src->nWidth * src->nHeight * src->bytes_per_pix_in;
     src->image_bytes_out = src->nWidth * src->nHeight * src->bytes_per_pix_out;
     //GST_DEBUG_OBJECT (src, "Image is %d x %d, pitch %d, bpp %d, Bpp %d", src->nWidth, src->nHeight, src->bits_per_pix_out, src->bytes_per_pix_out);
-    printf("Image %d w x %d h, in %d bytes / pix => %d bytes (%0.1f MB), out %d bytes / pix => %d bytes (%0.1f MB)",
+    GST_DEBUG_OBJECT (src, "Image %d w x %d h, in %d bytes / pix => %d bytes (%0.1f MB), out %d bytes / pix => %d bytes (%0.1f MB)",
             src->nWidth, src->nHeight,
             src->bytes_per_pix_in, src->image_bytes_in, src->image_bytes_in / 1e6,
             src->bytes_per_pix_out, src->image_bytes_out, src->image_bytes_out / 1e6);
@@ -801,10 +800,12 @@ void GBRG12_to_ARGB64_x4(GstToupCamSrc *src, const unsigned char *bufin, unsigne
     for (unsigned y = 0; y < src->nHeight; ++y) {
         for (unsigned x = 0; x < src->nWidth; ++x) {
             uint16_t pix16 = (bufin[1] << 12) | (bufin[0] << 4);
+            /*
             if (y == 0 && x < 16) {
                 //0x91 0x0E
-                printf("0x%02X 0x%02X\n", bufin[0], bufin[1]);
+                GST_DEBUG_OBJECT (src, "0x%02X 0x%02X", bufin[0], bufin[1]);
             }
+            */
             uint8_t pix1 = pix16 >> 8;
             uint8_t pix0 = pix16 & 0xFF;
             unsigned colori = x % 4;
@@ -837,10 +838,12 @@ void RGB48_to_ARGB64_x4(GstToupCamSrc *src, const unsigned char *bufin, unsigned
             bufin += 2;
             uint16_t bpix16 = (bufin[1] << 12) | (bufin[0] << 4);
             bufin += 2;
+            /*
             if (y == 0 && x < 16) {
                 //0x91 0x0E
-                printf("0x%02X 0x%02X\n", bufin[0], bufin[1]);
+                GST_DEBUG_OBJECT (src, "0x%02X 0x%02X", bufin[0], bufin[1]);
             }
+            */
             uint8_t rpix1 = rpix16 >> 8;
             uint8_t rpix0 = rpix16 & 0xFF;
             uint8_t gpix1 = gpix16 >> 8;
@@ -870,7 +873,7 @@ static GstFlowReturn wait_new_frame(GstToupCamSrc *src)
             g_mutex_lock(&src->mutex);
             end_time = g_get_monotonic_time () + G_TIME_SPAN_SECOND;
             if (!g_cond_wait_until(&src->cond, &src->mutex, end_time)) {
-                printf("timed out waiting for image, timeout=%u\n", timeout);
+                GST_DEBUG_OBJECT (src, "timed out waiting for image, timeout=%u", timeout);
                 // timeout has passed.
                 //g_mutex_unlock (&src->mutex); // return here if needed
                 //return NULL;
@@ -895,11 +898,11 @@ static GstFlowReturn pull_decode_frame(GstToupCamSrc *src, GstBuffer * buf)
 
     //minfo size 4096, maxsize 4103, flags 0x00000002
     gst_buffer_map (buf, &minfo, GST_MAP_WRITE);
-    printf("minfo size %lu, maxsize %lu, flags 0x%08X\n", minfo.size, minfo.maxsize, minfo.flags);
+    GST_DEBUG_OBJECT (src, "minfo size %lu, maxsize %lu, flags 0x%08X", minfo.size, minfo.maxsize, minfo.flags);
     //XXX: debugging crash
     if (minfo.size != src->image_bytes_out) {
         gst_buffer_unmap (buf, &minfo);
-        printf("bad minfo size. Expect %d, got %lu\n", src->image_bytes_out, minfo.size);
+        GST_DEBUG_OBJECT (src, "bad minfo size. Expect %d, got %lu", src->image_bytes_out, minfo.size);
         return GST_FLOW_ERROR;
     }
 
@@ -914,12 +917,12 @@ static GstFlowReturn pull_decode_frame(GstToupCamSrc *src, GstBuffer * buf)
 
         if (sizeof(raw_buff) < src->image_bytes_in) {
             gst_buffer_unmap (buf, &minfo);
-            printf("insufficient frame buffer size. Need %d, got %d\n", src->image_bytes_in, src->image_bytes_in);
+            GST_DEBUG_OBJECT (src, "insufficient frame buffer size. Need %d, got %d", src->image_bytes_in, src->image_bytes_in);
             return GST_FLOW_ERROR;
         }
 
         // From the grabber source we get 1 progressive frame
-        printf("pulling raw image\n");
+        GST_DEBUG_OBJECT (src, "pulling raw image");
         HRESULT hr = Toupcam_PullImageV2(src->hCam, &raw_buff, 0, &info);
         if (FAILED(hr)) {
             GST_ERROR_OBJECT (src, "failed to pull image, hr = %08x", hr);
@@ -927,7 +930,7 @@ static GstFlowReturn pull_decode_frame(GstToupCamSrc *src, GstBuffer * buf)
             return GST_FLOW_ERROR;
         }
         
-        printf("decoding image\n");
+        GST_DEBUG_OBJECT (src, "decoding image");
         GBRG12_to_ARGB64_x4(src, raw_buff, minfo.data);
         //memset(minfo.data, 0x80, src->nWidth * src->nHeight * 7);
 #if 0
@@ -941,11 +944,11 @@ static GstFlowReturn pull_decode_frame(GstToupCamSrc *src, GstBuffer * buf)
 #endif
     } else if (src->x16) {
         if (sizeof(raw_buff) < src->image_bytes_in) {
-            printf("insufficient frame buffer size. Need %d, got %d\n", src->image_bytes_in, src->image_bytes_in);
+            GST_DEBUG_OBJECT (src, "insufficient frame buffer size. Need %d, got %d", src->image_bytes_in, src->image_bytes_in);
             return GST_FLOW_ERROR;
         }
 
-        printf("pulling x16 image\n");
+        GST_DEBUG_OBJECT (src, "pulling x16 image");
         HRESULT hr = Toupcam_PullImageV2(src->hCam, &raw_buff, 48, &info);
         if (FAILED(hr)) {
             GST_ERROR_OBJECT (src, "failed to pull image, hr = %08x", hr);
@@ -953,10 +956,10 @@ static GstFlowReturn pull_decode_frame(GstToupCamSrc *src, GstBuffer * buf)
             return GST_FLOW_ERROR;
         }
         
-        printf("decoding image\n");
+        GST_DEBUG_OBJECT (src, "decoding image");
         RGB48_to_ARGB64_x4(src, raw_buff, minfo.data);
     } else {
-        printf("pulling x8 image\n");
+        GST_DEBUG_OBJECT (src, "pulling x8 image");
         HRESULT hr = Toupcam_PullImageV2(src->hCam, minfo.data, 24, &info);
         if (FAILED(hr)) {
             GST_ERROR_OBJECT (src, "failed to pull image, hr = %08x", hr);
@@ -969,8 +972,8 @@ static GstFlowReturn pull_decode_frame(GstToupCamSrc *src, GstBuffer * buf)
 
     src->imagesPulled += 1;
     /* After we get the image data, we can do anything for the data we want to do */
-    printf("pull image ok, total = %u, resolution = %u x %u\n", ++src->m_total, info.width, info.height);
-    printf("flag %u, seq %u, us %llu\n", info.flag, info.seq, info.timestamp);
+    GST_DEBUG_OBJECT (src, "pull image ok, total = %u, resolution = %u x %u", ++src->m_total, info.width, info.height);
+    GST_DEBUG_OBJECT (src, "flag %u, seq %u, us %llu", info.flag, info.seq, info.timestamp);
 
     return GST_FLOW_OK;
 }
@@ -982,8 +985,8 @@ static GstFlowReturn gst_toupcam_src_alloc (GstPushSrc * psrc, GstBuffer ** buf)
     GstToupCamSrc *src = GST_TOUPCAM_SRC (psrc);
 
     /*
-    printf("\n");
-    printf("waiting for new image\n");
+    GST_DEBUG_OBJECT (src, "");
+    GST_DEBUG_OBJECT (src, "waiting for new image");
 
     // lock next (raw) image for read access, convert it to the desired
     // format and unlock it again, so that grabbing can go on
@@ -999,7 +1002,7 @@ static GstFlowReturn gst_toupcam_src_alloc (GstPushSrc * psrc, GstBuffer ** buf)
 
     *buf = gst_buffer_new_allocate (NULL, src->image_bytes_out, NULL);
     if (G_UNLIKELY (*buf == NULL)) {
-       printf("Failed to allocate %u bytes", src->image_bytes_out);
+       GST_DEBUG_OBJECT (src, "Failed to allocate %u bytes", src->image_bytes_out);
        ret = GST_FLOW_ERROR;
     }
     ret = GST_FLOW_OK;
@@ -1014,10 +1017,10 @@ static GstFlowReturn
 gst_toupcam_src_fill (GstPushSrc * psrc, GstBuffer * buf)
 {
 
-    printf("\n");
     GstToupCamSrc *src = GST_TOUPCAM_SRC (psrc);
 
-    printf("waiting for new image\n");
+    GST_DEBUG_OBJECT (src, " ");
+    GST_DEBUG_OBJECT (src, "waiting for new image");
 
     // lock next (raw) image for read access, convert it to the desired
     // format and unlock it again, so that grabbing can go on
@@ -1043,7 +1046,7 @@ gst_toupcam_src_fill (GstPushSrc * psrc, GstBuffer * buf)
         GST_BUFFER_DTS(buf) = src->last_frame_time;  // convert ms to ns
     }
     GST_BUFFER_DURATION(buf) = src->duration;
-    printf("pts, dts: %" GST_TIME_FORMAT ", duration: %ld ms\n", GST_TIME_ARGS (src->last_frame_time), GST_TIME_AS_MSECONDS(src->duration));
+    GST_DEBUG_OBJECT (src, "pts, dts: %" GST_TIME_FORMAT ", duration: %ld ms", GST_TIME_ARGS (src->last_frame_time), GST_TIME_AS_MSECONDS(src->duration));
     */
     GST_BUFFER_PTS(buf) = GST_CLOCK_TIME_NONE;
     GST_BUFFER_DTS(buf) = GST_CLOCK_TIME_NONE;
@@ -1056,7 +1059,7 @@ gst_toupcam_src_fill (GstPushSrc * psrc, GstBuffer * buf)
     GST_BUFFER_OFFSET_END(buf) = src->n_frames;  // from videotestsrc
     if (psrc->parent.num_buffers>0)  // If we were asked for a specific number of buffers, stop when complete
         if (G_UNLIKELY(src->n_frames >= psrc->parent.num_buffers)) {
-            printf("EOS\n");
+            GST_DEBUG_OBJECT (src, "EOS");
             return GST_FLOW_EOS;
         }
 

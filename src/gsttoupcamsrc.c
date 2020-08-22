@@ -73,6 +73,10 @@ enum
     PROP_BRIGHTNESS,
     PROP_CONTRAST,
     PROP_GAMMA,
+
+    PROP_BB_R,
+    PROP_BB_G,
+    PROP_BB_B,
 };
 
 
@@ -193,6 +197,21 @@ gst_toupcam_src_class_init (GstToupCamSrcClass * klass)
     g_object_class_install_property (gobject_class, PROP_GAMMA,
             g_param_spec_int ("gamma", "...", "...",
                     TOUPCAM_GAMMA_MIN, TOUPCAM_GAMMA_MAX, TOUPCAM_GAMMA_DEF, G_PARAM_READABLE | G_PARAM_WRITABLE));
+
+
+    /*
+    0: normal, 255 turn channel off
+    ie setting to 255/255/255 turns image black
+    */
+    g_object_class_install_property (gobject_class, PROP_BB_R,
+            g_param_spec_int ("bb_r", "...", "...",
+                    0, 255, 0, G_PARAM_READABLE | G_PARAM_WRITABLE));
+    g_object_class_install_property (gobject_class, PROP_BB_G,
+            g_param_spec_int ("bb_g", "...", "...",
+                    0, 255, 0, G_PARAM_READABLE | G_PARAM_WRITABLE));
+    g_object_class_install_property (gobject_class, PROP_BB_B,
+            g_param_spec_int ("bb_b", "...", "...",
+                    0, 255, 0, G_PARAM_READABLE | G_PARAM_WRITABLE));
 }
 
 static void
@@ -209,6 +228,9 @@ gst_toupcam_src_init (GstToupCamSrc * src)
     src->brightness = DEFAULT_PROP_BRIGHTNESS;
     src->contrast = DEFAULT_PROP_CONTRAST;
     src->gamma = DEFAULT_PROP_GAMMA;
+    src->black_balance[0] = 0;
+    src->black_balance[1] = 0;
+    src->black_balance[2] = 0;
 
     /* set source as live (no preroll) */
     gst_base_src_set_live (GST_BASE_SRC (src), TRUE);
@@ -304,6 +326,27 @@ gst_toupcam_src_set_property (GObject * object, guint property_id,
             Toupcam_put_Gamma(src->hCam, src->gamma);
         }
         break;
+
+    case PROP_BB_R:
+        src->black_balance[0] = g_value_get_int (value);
+        if (src->hCam) {
+            Toupcam_put_BlackBalance(src->hCam, src->black_balance);
+        }
+        break;
+    case PROP_BB_G:
+        src->black_balance[1] = g_value_get_int (value);
+        if (src->hCam) {
+            Toupcam_put_BlackBalance(src->hCam, src->black_balance);
+        }
+        break;
+    case PROP_BB_B:
+        src->black_balance[2] = g_value_get_int (value);
+        if (src->hCam) {
+            Toupcam_put_BlackBalance(src->hCam, src->black_balance);
+        }
+        break;
+
+
     default:
         G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
         break;
@@ -352,34 +395,44 @@ gst_toupcam_src_get_property (GObject * object, guint property_id,
         break;
 
     case PROP_HUE:
-        g_value_set_int (value, src->hue);
         if (src->hCam) {
-            Toupcam_put_Hue(src->hCam, src->hue);
+            Toupcam_get_Hue(src->hCam, &src->hue);
         }
+        g_value_set_int (value, src->hue);
         break;
     case PROP_SATURATION:
-        g_value_set_int (value, src->saturation);
         if (src->hCam) {
-            Toupcam_put_Saturation(src->hCam, src->saturation);
+            Toupcam_get_Saturation(src->hCam, &src->saturation);
         }
+        g_value_set_int (value, src->saturation);
         break;
     case PROP_BRIGHTNESS:
-        g_value_set_int (value, src->brightness);
         if (src->hCam) {
-            Toupcam_put_Brightness(src->hCam, src->brightness);
+            Toupcam_get_Brightness(src->hCam, &src->brightness);
         }
+        g_value_set_int (value, src->brightness);
         break;
     case PROP_CONTRAST:
-        g_value_set_int (value, src->contrast);
         if (src->hCam) {
-            Toupcam_put_Contrast(src->hCam, src->contrast);
+            Toupcam_get_Contrast(src->hCam, &src->contrast);
         }
+        g_value_set_int (value, src->contrast);
         break;
     case PROP_GAMMA:
-        g_value_set_int (value, src->gamma);
         if (src->hCam) {
-            Toupcam_put_Gamma(src->hCam, src->gamma);
+            Toupcam_get_Gamma(src->hCam, &src->gamma);
         }
+        g_value_set_int (value, src->gamma);
+        break;
+
+    case PROP_BB_R:
+        g_value_set_int (value, src->black_balance[0]);
+        break;
+    case PROP_BB_G:
+        g_value_set_int (value, src->black_balance[1]);
+        break;
+    case PROP_BB_B:
+        g_value_set_int (value, src->black_balance[2]);
         break;
 
     default:
@@ -516,6 +569,14 @@ void gst_toupcam_pdebug(GstToupCamSrc *src) {
     //Toupcam_put_Option(src->hCam, TOUPCAM_OPTION_PIXEL_FORMAT, TOUPCAM_PIXELFORMAT_RAW12);
     //raw code GBRG, bpp 12
     printf("  raw code %c%c%c%c, bpp %u\n", nFourCC[0], nFourCC[1], nFourCC[2], nFourCC[3], bitsperpixel);
+}
+
+static void my_rgb_cb(const int aGain[3], void* pCtx) {
+    printf("gain %u %u %u\n", aGain[0], aGain[1], aGain[2]);
+}
+
+static void my_tt_cb(const int nTemp, const int nTint, void* pCtx) {
+    printf("awb cb %d %d %p\n", nTemp, nTint, pCtx);
 }
 
 static gboolean
@@ -689,6 +750,25 @@ gst_toupcam_src_start (GstBaseSrc * bsrc)
         GST_ERROR_OBJECT (src, "failed to start camera, hr = %08x", hr);
         goto fail;
     }
+
+
+    if (0) {
+        //fail...
+        if (FAILED(Toupcam_AwbInit(src->hCam, my_rgb_cb, NULL))) {
+            GST_ERROR_OBJECT (src, "failed to awb rgb");
+            goto fail;
+        }
+    }
+
+    if (0) {
+        //ok
+        if (FAILED(Toupcam_AwbOnePush(src->hCam, my_tt_cb, NULL))) {
+            GST_ERROR_OBJECT (src, "failed to awb tt");
+            goto fail;
+        }
+    }
+
+
 
     return TRUE;
 
@@ -1036,7 +1116,55 @@ gst_toupcam_src_fill (GstPushSrc * psrc, GstBuffer * buf)
         return GST_FLOW_ERROR;
     }
 
+    if (0) {
+        int aGain[3];
+        if (FAILED(Toupcam_get_WhiteBalanceGain(src->hCam, aGain))) {
+            printf("fail get gain rgb\n");
+        } else {
+            printf("gain %u %u %u\n", aGain[0], aGain[1], aGain[2]);
+        }
+    }
+    if (0) {
+        //0 0 0
+        unsigned short aSub[3];
+        if (FAILED(Toupcam_get_BlackBalance(src->hCam, aSub))) {
+            printf("fail get bb\n");
+        } else {
+            printf("bb %u %u %u\n", aSub[0], aSub[1], aSub[2]);
+        }
+    }
+    if (0) {
+        int nTemp;
+        int nTint;
+        if (FAILED(Toupcam_get_TempTint(src->hCam, &nTemp, &nTint))) {
+            printf("fail get gain tt\n");
+        } else {
+            //gain 6503 1000
+            printf("gain %i %i\n", nTemp, nTint);
+        }
+    }
+    
 
+
+    if (0) {
+        if (FAILED(Toupcam_put_TempTint(src->hCam, 653, 100))) {
+            printf("fail set gain tt\n");
+        }
+    }
+    //works!
+    if (0) {
+        unsigned short aSub[3] = {0, 100, 0};
+        if (FAILED(Toupcam_put_BlackBalance(src->hCam, aSub))) {
+            printf("fail set bb\n");
+        }
+    }
+    if (0) {
+        int aGain[3] = {10, 20, 30};
+        if (FAILED(Toupcam_put_WhiteBalanceGain(src->hCam, aGain))) {
+            printf("fail set gain rgb\n");
+        }
+    }
+    
 
     /*
     // If we do not use gst_base_src_set_do_timestamp() we need to add timestamps manually

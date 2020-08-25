@@ -582,6 +582,11 @@ static void my_tt_cb(const int nTemp, const int nTint, void* pCtx) {
 static gboolean
 gst_toupcam_src_start (GstBaseSrc * bsrc)
 {
+
+    ToupcamInstV2 arr[TOUPCAM_MAX];
+    unsigned cnt = 0;
+    char  at_id[65];
+
     // Start will open the device but not start it, set_caps starts it, stop should stop and close it (as v4l2src)
 
     GstToupCamSrc *src = GST_TOUPCAM_SRC (bsrc);
@@ -594,15 +599,21 @@ gst_toupcam_src_start (GstBaseSrc * bsrc)
     // read libversion (for informational purposes only)
     GST_INFO_OBJECT (src, "ToupCam Library Ver %s", Toupcam_Version());
 
-    // open first usable device
-    GST_DEBUG_OBJECT (src, "Toupcam_Open");
-    src->hCam = Toupcam_Open(NULL);
-    if (NULL == src->hCam)
-    {
-        GST_ERROR_OBJECT(src, "No ToupCam device found or open failed");
-        goto fail;
-    }
+    // enumerate devices (needed to get device id in order to prepend with "@" to enable RGB gain functions)
+    cnt = Toupcam_EnumV2(arr);
+    for (unsigned i = 0; i < cnt; ++i){
 
+        snprintf(at_id, 65, "@%s", arr[0].id); 
+
+        // open first usable device id preprended with "@"
+        GST_DEBUG_OBJECT (src, "Toupcam_Open");
+        src->hCam = Toupcam_Open(at_id);
+        if (NULL == src->hCam)
+        {
+            GST_ERROR_OBJECT(src, "No ToupCam device found or open failed");
+            goto fail;
+        }
+    }
     //gst_toupcam_pdebug(src);
 
     HRESULT hr;

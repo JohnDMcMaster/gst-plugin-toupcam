@@ -978,11 +978,11 @@ static GstFlowReturn pull_decode_frame(GstToupCamSrc *src, GstBuffer * buf)
 
     //minfo size 4096, maxsize 4103, flags 0x00000002
     gst_buffer_map (buf, &minfo, GST_MAP_WRITE);
-    GST_DEBUG_OBJECT (src, "minfo size %lu, maxsize %lu, flags 0x%08X", minfo.size, minfo.maxsize, minfo.flags);
+    GST_DEBUG_OBJECT (src, "minfo size %"G_GSIZE_FORMAT", maxsize %"G_GSIZE_FORMAT", flags 0x%08X", minfo.size, minfo.maxsize, minfo.flags);
     //XXX: debugging crash
     if (minfo.size != src->image_bytes_out) {
         gst_buffer_unmap (buf, &minfo);
-        GST_DEBUG_OBJECT (src, "bad minfo size. Expect %d, got %lu", src->image_bytes_out, minfo.size);
+        GST_DEBUG_OBJECT (src, "bad minfo size. Expect %d, got %"G_GSIZE_FORMAT, src->image_bytes_out, minfo.size);
         return GST_FLOW_ERROR;
     }
 

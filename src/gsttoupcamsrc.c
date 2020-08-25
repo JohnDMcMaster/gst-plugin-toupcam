@@ -1099,6 +1099,14 @@ gst_toupcam_src_fill (GstPushSrc * psrc, GstBuffer * buf)
 
     GstToupCamSrc *src = GST_TOUPCAM_SRC (psrc);
 
+    //printf("Want %d buffers have %d\n", psrc->parent.num_buffers, src->n_frames);
+    if (psrc->parent.num_buffers>0)  // If we were asked for a specific number of buffers, stop when complete
+        if (G_UNLIKELY(src->n_frames >= psrc->parent.num_buffers)) {
+            GST_DEBUG_OBJECT (src, "EOS");
+            return GST_FLOW_EOS;
+        }
+
+
     GST_DEBUG_OBJECT (src, " ");
     GST_DEBUG_OBJECT (src, "waiting for new image");
 
@@ -1184,12 +1192,7 @@ gst_toupcam_src_fill (GstPushSrc * psrc, GstBuffer * buf)
     // count frames, and send EOS when required frame number is reached
     GST_BUFFER_OFFSET(buf) = src->n_frames;  // from videotestsrc
     src->n_frames++;
-    GST_BUFFER_OFFSET_END(buf) = src->n_frames;  // from videotestsrc
-    if (psrc->parent.num_buffers>0)  // If we were asked for a specific number of buffers, stop when complete
-        if (G_UNLIKELY(src->n_frames >= psrc->parent.num_buffers)) {
-            GST_DEBUG_OBJECT (src, "EOS");
-            return GST_FLOW_EOS;
-        }
+
 
     // see, if we had to drop some frames due to data transfer stalls. if so,
     // output a message

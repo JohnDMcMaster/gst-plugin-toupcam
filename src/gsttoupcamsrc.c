@@ -77,6 +77,10 @@ enum
     PROP_BB_R,
     PROP_BB_G,
     PROP_BB_B,
+
+    PROP_WB_R,
+    PROP_WB_G,
+    PROP_WB_B,    
 };
 
 
@@ -212,6 +216,17 @@ gst_toupcam_src_class_init (GstToupCamSrcClass * klass)
     g_object_class_install_property (gobject_class, PROP_BB_B,
             g_param_spec_int ("bb_b", "...", "...",
                     0, 255, 0, G_PARAM_READABLE | G_PARAM_WRITABLE));
+
+
+    g_object_class_install_property (gobject_class, PROP_WB_R,
+            g_param_spec_int ("wb_r", "...", "...",
+                    0, 255, 0, G_PARAM_READABLE | G_PARAM_WRITABLE));
+    g_object_class_install_property (gobject_class, PROP_WB_G,
+            g_param_spec_int ("wb_g", "...", "...",
+                    0, 255, 0, G_PARAM_READABLE | G_PARAM_WRITABLE));
+    g_object_class_install_property (gobject_class, PROP_WB_B,
+            g_param_spec_int ("wb_b", "...", "...",
+                    0, 255, 0, G_PARAM_READABLE | G_PARAM_WRITABLE));
 }
 
 static void
@@ -231,6 +246,11 @@ gst_toupcam_src_init (GstToupCamSrc * src)
     src->black_balance[0] = 0;
     src->black_balance[1] = 0;
     src->black_balance[2] = 0;
+
+    src->white_balance[0] = 0;
+    src->white_balance[1] = 0;
+    src->white_balance[2] = 0;
+
 
     /* set source as live (no preroll) */
     gst_base_src_set_live (GST_BASE_SRC (src), TRUE);
@@ -346,6 +366,24 @@ gst_toupcam_src_set_property (GObject * object, guint property_id,
         }
         break;
 
+    case PROP_WB_R:
+        src->white_balance[0] = g_value_get_int (value);
+        if (src->hCam) {
+            Toupcam_put_WhiteBalanceGain(src->hCam, src->white_balance);
+        }
+        break;
+    case PROP_WB_G:
+        src->white_balance[1] = g_value_get_int (value);
+        if (src->hCam) {
+            Toupcam_put_WhiteBalanceGain(src->hCam, src->white_balance);
+        }
+        break;
+    case PROP_WB_B:
+        src->white_balance[2] = g_value_get_int (value);
+        if (src->hCam) {
+            Toupcam_put_WhiteBalanceGain(src->hCam, src->white_balance);
+        }
+        break;
 
     default:
         G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
@@ -433,6 +471,16 @@ gst_toupcam_src_get_property (GObject * object, guint property_id,
         break;
     case PROP_BB_B:
         g_value_set_int (value, src->black_balance[2]);
+        break;
+
+    case PROP_WB_R:
+        g_value_set_int (value, src->white_balance[0]);
+        break;
+    case PROP_WB_G:
+        g_value_set_int (value, src->white_balance[1]);
+        break;
+    case PROP_WB_B:
+        g_value_set_int (value, src->white_balance[2]);
         break;
 
     default:

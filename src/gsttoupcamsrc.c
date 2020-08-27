@@ -649,18 +649,20 @@ gst_toupcam_src_start (GstBaseSrc * bsrc)
 
     // enumerate devices (needed to get device id in order to prepend with "@" to enable RGB gain functions)
     cnt = Toupcam_EnumV2(arr);
-    for (unsigned i = 0; i < cnt; ++i){
+    GST_INFO_OBJECT (src, "Found %d devices", cnt);
+    if (cnt < 1) {
+        GST_ERROR_OBJECT(src, "No ToupCam devices found");
+        goto fail;
+    }
 
-        snprintf(at_id, 65, "@%s", arr[0].id); 
-
-        // open first usable device id preprended with "@"
-        GST_DEBUG_OBJECT (src, "Toupcam_Open");
-        src->hCam = Toupcam_Open(at_id);
-        if (NULL == src->hCam)
-        {
-            GST_ERROR_OBJECT(src, "No ToupCam device found or open failed");
-            goto fail;
-        }
+    GST_DEBUG_OBJECT (src, "Toupcam_Open");
+    // open first usable device id preprended with "@"
+    snprintf(at_id, 65, "@%s", arr[0].id);
+    src->hCam = Toupcam_Open(at_id);
+    if (NULL == src->hCam)
+    {
+        GST_ERROR_OBJECT(src, "open failed");
+        goto fail;
     }
     //gst_toupcam_pdebug(src);
 

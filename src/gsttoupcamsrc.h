@@ -62,6 +62,7 @@ struct _GstToupCamSrc
     int contrast;
     int gamma;
     unsigned short black_balance[3];
+    int white_balance[3];
 
     // stream
     gboolean acq_started;

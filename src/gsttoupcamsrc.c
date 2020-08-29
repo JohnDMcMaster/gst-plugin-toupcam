@@ -427,7 +427,7 @@ gst_toupcam_src_get_property (GObject * object, guint property_id,
         break;
     case PROP_VFLIP:
         if (src->hCam) {
-            Toupcam_get_HFlip(src->hCam, &src->vflip);
+            Toupcam_get_VFlip(src->hCam, &src->vflip);
         }
         g_value_set_boolean (value, src->vflip);
         break;

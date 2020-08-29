@@ -63,6 +63,8 @@ struct _GstToupCamSrc
     int gamma;
     unsigned short black_balance[3];
     int white_balance[3];
+    int awb_rgb;
+    int awb_tt;
 
     // stream
     gboolean acq_started;

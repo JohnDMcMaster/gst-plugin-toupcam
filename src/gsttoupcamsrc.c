@@ -80,7 +80,10 @@ enum
 
     PROP_WB_R,
     PROP_WB_G,
-    PROP_WB_B,    
+    PROP_WB_B,
+
+    PROP_AWB_RGB,
+    PROP_AWB_TT,
 };
 
 
@@ -227,6 +230,13 @@ gst_toupcam_src_class_init (GstToupCamSrcClass * klass)
     g_object_class_install_property (gobject_class, PROP_WB_B,
             g_param_spec_int ("wb_b", "...", "...",
                     -255, 255, 0, G_PARAM_READABLE | G_PARAM_WRITABLE));
+
+    g_object_class_install_property (gobject_class, PROP_AWB_RGB,
+            g_param_spec_boolean ("awb_rgb", "Trigger AWB", "Requests a single red/green/blue AWB and clears when complete",
+                    0, G_PARAM_READABLE | G_PARAM_WRITABLE));
+    g_object_class_install_property (gobject_class, PROP_AWB_TT,
+            g_param_spec_boolean ("awb_tt", "Trigger AWB", "Requests a single temp/tint AWB and clears when complete",
+                    0, G_PARAM_READABLE | G_PARAM_WRITABLE));
 }
 
 static void
@@ -251,6 +261,8 @@ gst_toupcam_src_init (GstToupCamSrc * src)
     src->white_balance[1] = 0;
     src->white_balance[2] = 0;
 
+    src->awb_rgb = 0;
+    src->awb_tt = 0;
 
     /* set source as live (no preroll) */
     gst_base_src_set_live (GST_BASE_SRC (src), TRUE);
@@ -277,6 +289,18 @@ gst_toupcam_src_reset (GstToupCamSrc * src)
     src->total_timeouts = 0;
     src->last_frame_time = 0;
     src->m_total = 0;
+}
+
+static void my_rgb_cb(const int aGain[3], void* pCtx) {
+    GstToupCamSrc *src = (GstToupCamSrc *)pCtx;;
+    printf("gain %u %u %u\n", aGain[0], aGain[1], aGain[2]);
+    src->awb_rgb = 0;
+}
+
+static void my_tt_cb(const int nTemp, const int nTint, void* pCtx) {
+    GstToupCamSrc *src = (GstToupCamSrc *)pCtx;;
+    printf("awb cb %d %d %p\n", nTemp, nTint, pCtx);
+    src->awb_tt = 0;
 }
 
 void
@@ -382,6 +406,30 @@ gst_toupcam_src_set_property (GObject * object, guint property_id,
         src->white_balance[2] = g_value_get_int (value);
         if (src->hCam) {
             Toupcam_put_WhiteBalanceGain(src->hCam, src->white_balance);
+        }
+        break;
+
+    case PROP_AWB_RGB:
+        if (!(src->awb_rgb || src->awb_tt)) {
+            //fail...
+            if (FAILED(Toupcam_AwbInit(src->hCam, my_rgb_cb, src))) {
+                GST_ERROR_OBJECT (src, "failed to awb rgb");
+                src->awb_rgb = 0;
+            } else {
+                src->awb_rgb = 1;
+            }
+        }
+        break;
+
+    case PROP_AWB_TT:
+        if (!(src->awb_rgb || src->awb_tt)) {
+            //ok
+            if (FAILED(Toupcam_AwbOnePush(src->hCam, my_tt_cb, src))) {
+                GST_ERROR_OBJECT (src, "failed to awb tt");
+                src->awb_tt = 0;
+            } else {
+                src->awb_tt = 1;
+            }
         }
         break;
 
@@ -499,6 +547,14 @@ gst_toupcam_src_get_property (GObject * object, guint property_id,
     case PROP_WB_B:
         try_get_white_balance(src);
         g_value_set_int (value, src->white_balance[2]);
+        break;
+
+    case PROP_AWB_RGB:
+        g_value_set_boolean (value, src->awb_rgb);
+        break;
+
+    case PROP_AWB_TT:
+        g_value_set_boolean (value, src->awb_tt);
         break;
 
     default:
@@ -635,14 +691,6 @@ void gst_toupcam_pdebug(GstToupCamSrc *src) {
     //Toupcam_put_Option(src->hCam, TOUPCAM_OPTION_PIXEL_FORMAT, TOUPCAM_PIXELFORMAT_RAW12);
     //raw code GBRG, bpp 12
     printf("  raw code %c%c%c%c, bpp %u\n", nFourCC[0], nFourCC[1], nFourCC[2], nFourCC[3], bitsperpixel);
-}
-
-static void my_rgb_cb(const int aGain[3], void* pCtx) {
-    printf("gain %u %u %u\n", aGain[0], aGain[1], aGain[2]);
-}
-
-static void my_tt_cb(const int nTemp, const int nTint, void* pCtx) {
-    printf("awb cb %d %d %p\n", nTemp, nTint, pCtx);
 }
 
 static gboolean
@@ -829,25 +877,6 @@ gst_toupcam_src_start (GstBaseSrc * bsrc)
         GST_ERROR_OBJECT (src, "failed to start camera, hr = %08x", hr);
         goto fail;
     }
-
-
-    if (0) {
-        //fail...
-        if (FAILED(Toupcam_AwbInit(src->hCam, my_rgb_cb, NULL))) {
-            GST_ERROR_OBJECT (src, "failed to awb rgb");
-            goto fail;
-        }
-    }
-
-    if (0) {
-        //ok
-        if (FAILED(Toupcam_AwbOnePush(src->hCam, my_tt_cb, NULL))) {
-            GST_ERROR_OBJECT (src, "failed to awb tt");
-            goto fail;
-        }
-    }
-
-
 
     return TRUE;
 

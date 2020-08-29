@@ -220,13 +220,13 @@ gst_toupcam_src_class_init (GstToupCamSrcClass * klass)
 
     g_object_class_install_property (gobject_class, PROP_WB_R,
             g_param_spec_int ("wb_r", "...", "...",
-                    0, 255, 0, G_PARAM_READABLE | G_PARAM_WRITABLE));
+                    -255, 255, 0, G_PARAM_READABLE | G_PARAM_WRITABLE));
     g_object_class_install_property (gobject_class, PROP_WB_G,
             g_param_spec_int ("wb_g", "...", "...",
-                    0, 255, 0, G_PARAM_READABLE | G_PARAM_WRITABLE));
+                    -255, 255, 0, G_PARAM_READABLE | G_PARAM_WRITABLE));
     g_object_class_install_property (gobject_class, PROP_WB_B,
             g_param_spec_int ("wb_b", "...", "...",
-                    0, 255, 0, G_PARAM_READABLE | G_PARAM_WRITABLE));
+                    -255, 255, 0, G_PARAM_READABLE | G_PARAM_WRITABLE));
 }
 
 static void
@@ -391,6 +391,18 @@ gst_toupcam_src_set_property (GObject * object, guint property_id,
     }
 }
 
+static void try_get_black_balance(GstToupCamSrc *src) {
+    if (src->hCam) {
+        Toupcam_get_BlackBalance(src->hCam, src->black_balance);
+    }
+}
+
+static void try_get_white_balance(GstToupCamSrc *src) {
+    if (src->hCam) {
+        Toupcam_get_WhiteBalanceGain(src->hCam, src->white_balance);
+    }
+}
+
 void
 gst_toupcam_src_get_property (GObject * object, guint property_id,
         GValue * value, GParamSpec * pspec)
@@ -464,22 +476,28 @@ gst_toupcam_src_get_property (GObject * object, guint property_id,
         break;
 
     case PROP_BB_R:
+        try_get_black_balance(src);
         g_value_set_int (value, src->black_balance[0]);
         break;
     case PROP_BB_G:
+        try_get_black_balance(src);
         g_value_set_int (value, src->black_balance[1]);
         break;
     case PROP_BB_B:
+        try_get_black_balance(src);
         g_value_set_int (value, src->black_balance[2]);
         break;
 
     case PROP_WB_R:
+        try_get_white_balance(src);
         g_value_set_int (value, src->white_balance[0]);
         break;
     case PROP_WB_G:
+        try_get_white_balance(src);
         g_value_set_int (value, src->white_balance[1]);
         break;
     case PROP_WB_B:
+        try_get_white_balance(src);
         g_value_set_int (value, src->white_balance[2]);
         break;
 

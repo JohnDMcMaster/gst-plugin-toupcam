@@ -7,6 +7,9 @@ What it is
 This is a source element for GStreamer 1.0 for live acquisition from a camera that uses the 
 toupcam SDK (http://www.touptek.com/download/showdownload.php?lang=en&id=32).
 
+Intended to be used with https://github.com/JohnDMcMaster/pyuscope/
+
+
 Comments
 --------
 

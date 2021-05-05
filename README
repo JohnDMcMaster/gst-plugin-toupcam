@@ -33,7 +33,8 @@ Install
     cd ~
     # get sdk from here: http://www.touptek.com/download/showdownload.php?lang=en&id=32
     # md5sum
-    # c151ed88b3065569dc344a4a22d90bc3  toupcamsdk.zip
+    # 8e00f2ef863c0a8b560221a23f14cbbb  toupcamsdk.zip
+    # Version: 48.18081.2020.1205 (Found in toupcamsdk/doc/en.html)
     mkdir toupcamsdk
     cd toupcamsdk
     unzip ../toupcamsdk.zip

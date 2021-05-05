@@ -424,7 +424,7 @@ gst_toupcam_src_set_property (GObject * object, guint property_id,
     case PROP_AWB_TT:
         if (!(src->awb_rgb || src->awb_tt)) {
             //ok
-            if (FAILED(Toupcam_AwbOnePush(src->hCam, my_tt_cb, src))) {
+            if (FAILED(Toupcam_AwbOnce(src->hCam, my_tt_cb, src))) {
                 GST_ERROR_OBJECT (src, "failed to awb tt");
                 src->awb_tt = 0;
             } else {
@@ -697,7 +697,7 @@ static gboolean
 gst_toupcam_src_start (GstBaseSrc * bsrc)
 {
 
-    ToupcamInstV2 arr[TOUPCAM_MAX];
+    ToupcamDeviceV2 arr[TOUPCAM_MAX];
     unsigned cnt = 0;
     char  at_id[65];
 

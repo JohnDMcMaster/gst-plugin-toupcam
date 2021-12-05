@@ -67,6 +67,8 @@ Install
     GST_PLUGIN_PATH=$PWD/src/.libs/ gst-launch-1.0 toupcamsrc ! videoconvert ! pngenc snapshot=true ! filesink location=/tmp/test.png
     # stream to local video out (e.g. 2nd HDMI on raspberry pi 4)
     GST_PLUGIN_PATH=$PWD/src/.libs/ gst-launch-1.0 toupcamsrc ! videoconvert ! autovideosink
+    # Change resolution, set some parameters
+    GST_PLUGIN_PATH=$PWD/src/.libs/ gst-launch-1.0 toupcamsrc auto_exposure=1 expotime=100000 esize=2 ! videoconvert ! xvimagesink
 
     # if all is good
     sudo make install

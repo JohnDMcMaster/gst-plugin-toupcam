@@ -9,12 +9,7 @@ toupcam SDK (http://www.touptek.com/download/showdownload.php?lang=en&id=32).
 
 Intended to be used with https://github.com/JohnDMcMaster/pyuscope/
 
-
-Comments
---------
-
- - It supports just colour of one type
-
+Why? Here's some background on v4l vs gstreamer plugin: https://uvicrec.blogspot.com/2021/12/migrating-from-kernel-to-gstreamer.html
 
 Install
 -------
@@ -32,9 +27,6 @@ Install
 
     cd ~
     # get sdk from here: http://www.touptek.com/download/showdownload.php?lang=en&id=32
-    # md5sum
-    # 8e00f2ef863c0a8b560221a23f14cbbb  toupcamsdk.zip
-    # Version: 48.18081.2020.1205 (Found in toupcamsdk/doc/en.html)
     mkdir toupcamsdk
     cd toupcamsdk
     unzip ../toupcamsdk.zip
@@ -74,6 +66,9 @@ Install
     sudo make install
     echo "export GST_PLUGIN_PATH=/usr/local/lib/gstreamer-1.0" >> ~/.profile
 
+Tested versions:
+  * toupcamsdk_46.16880.2020.0330
+  * toupcamsdk_46.17309.2020.0616
 
 See the INSTALL file for advanced setup.
 
@@ -83,9 +78,19 @@ to import the library locations into the project (Properties -> C/C++ General ->
 Locations
 ---------
 
-Gstreamer plugin locations:
-/usr/lib/i386-linux-gnu/gstreamer-1.0
-/usr/local/lib/gstreamer-1.0
+Potential gstreamer plugin locations:
+  * /usr/local/lib/gstreamer-1.0
+    * Ubuntu 20.04 x64
+  * /usr/lib/i386-linux-gnu/gstreamer-1.0
+  * /usr/lib/arm-linux-gnueabihf/gstreamer-1.0/
+    * Raspberry Pi
 
-# on pi:
-/usr/lib/arm-linux-gnueabihf/gstreamer-1.0/
+Camera inventory
+---------
+
+Quick refernece for cameras that developers are testing:
+  * E3ISPM20000KPA
+    * McMaster current camera
+    * 16 bit capture is partially supported
+  * MU800
+    * McMaster original camera

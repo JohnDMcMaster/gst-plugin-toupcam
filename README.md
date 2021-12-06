@@ -85,6 +85,28 @@ Potential gstreamer plugin locations:
   * /usr/lib/arm-linux-gnueabihf/gstreamer-1.0/
     * Raspberry Pi
 
+Compatbility
+---------
+
+These cameras can include:
+  * ToupTek
+    * All USB cameras
+    * Not including networked cameras
+  * ScopeTek
+    * All USB cameras?
+    * Unclear exact relationship to ToupTek
+  * AmScope
+    * All USB cameras?
+    * MU series
+      * Ex: AmScope MU800 => ToupTek UCMOS08000KPB
+      * Ex: AmScope MU1403 => ToupTek U3CMOS14000KPA
+    * MD series
+      * Ex: AmScope MD1800 => ScopeTek DCM800
+  * Tucsen
+      * All USB cameras?
+      * SDK is rebranded
+      * Do they work with ToupTek SDK as well?
+
 Camera inventory
 ---------
 

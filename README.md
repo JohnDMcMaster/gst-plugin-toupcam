@@ -14,6 +14,11 @@ Why? Here's some background on v4l vs gstreamer plugin: https://uvicrec.blogspot
 Install
 -------
 
+    # 2022-08-19: test 2021-10-29 on Pop!_OS 22.04 LTS
+    # error: implicit declaration of function ‘Toupcam_AwbOnce’; did you mean ‘Toupcam_AwbInit’
+    # was using: toupcamsdk_46.17309.2020.0616_2020-02-05
+    # upgrade fixed
+
     # Ubuntu 20.04, tested on 2020-08-12
     # Linux dell 5.4.0-26-generic #30-Ubuntu SMP Mon Apr 20 16:58:30 UTC 2020 x86_64 x86_64 x86_64 GNU/Linux
     # Note 1.8.3 tested working on reference laptop, but 1.16.2 on 20.04

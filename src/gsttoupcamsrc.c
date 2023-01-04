@@ -1,5 +1,5 @@
 /* GStreamer ToupCam Plugin
- * Copyright (C) 2020 
+ * Copyright (C) 2022 Labsmore LLC
  *
  * Author John McMaster <johndmcmaster@gmail.com>
  * Author Kishore Arepalli <kishore.arepalli@gmail.com>
@@ -31,8 +31,6 @@
 #include <gst/video/video.h>
 
 #include <stdlib.h>
-
-#include "toupcam.h"
 
 #include "gsttoupcamsrc.h"
 
@@ -87,11 +85,6 @@ enum
 };
 
 
-// Put matching type text in the pad template below
-
-#define TOUPCAM_OPTION_BYTEORDER_RGB    0
-#define TOUPCAM_OPTION_BYTEORDER_BGR    1
-
 #define DEFAULT_PROP_AUTO_EXPOSURE		TRUE
 #define DEFAULT_PROP_EXPOTIME		    0
 #define MIN_PROP_EXPOTIME		        0
@@ -99,11 +92,15 @@ enum
 #define MAX_PROP_EXPOTIME		        5000000
 #define DEFAULT_PROP_HFLIP		        FALSE
 #define DEFAULT_PROP_VFLIP		        FALSE
-#define DEFAULT_PROP_HUE                TOUPCAM_HUE_DEF
-#define DEFAULT_PROP_SATURATION         TOUPCAM_SATURATION_DEF
-#define DEFAULT_PROP_BRIGHTNESS         TOUPCAM_BRIGHTNESS_DEF
-#define DEFAULT_PROP_CONTRAST           TOUPCAM_CONTRAST_DEF
-#define DEFAULT_PROP_GAMMA              TOUPCAM_GAMMA_DEF
+#define DEFAULT_PROP_HUE                CAMSDK_(HUE_DEF)
+#define DEFAULT_PROP_SATURATION         CAMSDK_(SATURATION_DEF)
+#define DEFAULT_PROP_BRIGHTNESS         CAMSDK_(BRIGHTNESS_DEF)
+#define DEFAULT_PROP_CONTRAST           CAMSDK_(CONTRAST_DEF)
+#define DEFAULT_PROP_GAMMA              CAMSDK_(GAMMA_DEF)
+
+//These don't have defined enums for some reason
+#define GST_TOUPCAM_OPTION_BYTEORDER_RGB    0
+#define GST_TOUPCAM_OPTION_BYTEORDER_BGR    1
 
 int raw = 0;
 int x16 = 0;
@@ -191,19 +188,19 @@ gst_toupcam_src_class_init (GstToupCamSrcClass * klass)
 
     g_object_class_install_property (gobject_class, PROP_HUE,
             g_param_spec_int ("hue", "...", "...",
-                    TOUPCAM_HUE_MIN, TOUPCAM_HUE_MAX, TOUPCAM_HUE_DEF, G_PARAM_READABLE | G_PARAM_WRITABLE));
+                    CAMSDK_(HUE_MIN), CAMSDK_(HUE_MAX), CAMSDK_(HUE_DEF), G_PARAM_READABLE | G_PARAM_WRITABLE));
     g_object_class_install_property (gobject_class, PROP_SATURATION,
             g_param_spec_int ("saturation", "...", "...",
-                    TOUPCAM_SATURATION_MIN, TOUPCAM_SATURATION_MAX, TOUPCAM_SATURATION_DEF, G_PARAM_READABLE | G_PARAM_WRITABLE));
+                    CAMSDK_(SATURATION_MIN), CAMSDK_(SATURATION_MAX), CAMSDK_(SATURATION_DEF), G_PARAM_READABLE | G_PARAM_WRITABLE));
     g_object_class_install_property (gobject_class, PROP_BRIGHTNESS,
             g_param_spec_int ("brightness", "...", "...",
-                    TOUPCAM_BRIGHTNESS_MIN, TOUPCAM_BRIGHTNESS_MAX, TOUPCAM_BRIGHTNESS_DEF, G_PARAM_READABLE | G_PARAM_WRITABLE));
+                    CAMSDK_(BRIGHTNESS_MIN), CAMSDK_(BRIGHTNESS_MAX), CAMSDK_(BRIGHTNESS_DEF), G_PARAM_READABLE | G_PARAM_WRITABLE));
     g_object_class_install_property (gobject_class, PROP_CONTRAST,
             g_param_spec_int ("contrast", "...", "...",
-                    TOUPCAM_CONTRAST_MIN, TOUPCAM_CONTRAST_MAX, TOUPCAM_CONTRAST_DEF, G_PARAM_READABLE | G_PARAM_WRITABLE));
+                    CAMSDK_(CONTRAST_MIN), CAMSDK_(CONTRAST_MAX), CAMSDK_(CONTRAST_DEF), G_PARAM_READABLE | G_PARAM_WRITABLE));
     g_object_class_install_property (gobject_class, PROP_GAMMA,
             g_param_spec_int ("gamma", "...", "...",
-                    TOUPCAM_GAMMA_MIN, TOUPCAM_GAMMA_MAX, TOUPCAM_GAMMA_DEF, G_PARAM_READABLE | G_PARAM_WRITABLE));
+                    CAMSDK_(GAMMA_MIN), CAMSDK_(GAMMA_MAX), CAMSDK_(GAMMA_DEF), G_PARAM_READABLE | G_PARAM_WRITABLE));
 
 
     /*
@@ -270,11 +267,6 @@ gst_toupcam_src_init (GstToupCamSrc * src)
     /* override default of BYTES to operate in time mode */
     gst_base_src_set_format (GST_BASE_SRC (src), GST_FORMAT_TIME);
 
-    //siddique mu800 test
-    //Image 3264 w x 2448 h, in 3 bytes / pix => 23970816 bytes (24,0 MB), out 3 bytes / pix => 23970816 bytes (24,0 MB)
-    //gst_base_src_set_blocksize(GST_BASE_SRC (src), 23970816);
-    //gst_base_src_set_blocksize(GST_BASE_SRC (src), src->image_bytes_out);
-
     g_mutex_init(&src->mutex);
     g_cond_init(&src->cond);
     gst_toupcam_src_reset (src);
@@ -319,100 +311,100 @@ gst_toupcam_src_set_property (GObject * object, guint property_id,
     case PROP_HFLIP:
         src->hflip = g_value_get_boolean (value);
         if (src->hCam) {
-            Toupcam_put_HFlip(src->hCam, src->hflip);
+            camsdk_(put_HFlip)(src->hCam, src->hflip);
         }
         break;
     case PROP_VFLIP:
         src->vflip = g_value_get_boolean (value);
         if (src->hCam) {
-            Toupcam_put_VFlip(src->hCam, src->vflip);
+            camsdk_(put_VFlip)(src->hCam, src->vflip);
         }
         break;
     case PROP_AUTO_EXPOSURE:
         src->auto_exposure = g_value_get_boolean (value);
         if (src->hCam) {
-            Toupcam_put_AutoExpoEnable(src->hCam, src->auto_exposure);
+            camsdk_(put_AutoExpoEnable)(src->hCam, src->auto_exposure);
         }
         break;
     case PROP_EXPOTIME:
         src->expotime = g_value_get_int (value);
         if (src->hCam) {
-            Toupcam_put_ExpoTime(src->hCam, src->expotime);
+            camsdk_(put_ExpoTime)(src->hCam, src->expotime);
         }
         break;
     case PROP_HUE:
         src->hue = g_value_get_int (value);
         if (src->hCam) {
-            Toupcam_put_Hue(src->hCam, src->hue);
+            camsdk_(put_Hue)(src->hCam, src->hue);
         }
         break;
     case PROP_SATURATION:
         src->saturation = g_value_get_int (value);
         if (src->hCam) {
-            Toupcam_put_Saturation(src->hCam, src->saturation);
+            camsdk_(put_Saturation)(src->hCam, src->saturation);
         }
         break;
     case PROP_BRIGHTNESS:
         src->brightness = g_value_get_int (value);
         if (src->hCam) {
-            Toupcam_put_Brightness(src->hCam, src->brightness);
+            camsdk_(put_Brightness)(src->hCam, src->brightness);
         }
         break;
     case PROP_CONTRAST:
         src->contrast = g_value_get_int (value);
         if (src->hCam) {
-            Toupcam_put_Contrast(src->hCam, src->contrast);
+            camsdk_(put_Contrast)(src->hCam, src->contrast);
         }
         break;
     case PROP_GAMMA:
         src->gamma = g_value_get_int (value);
         if (src->hCam) {
-            Toupcam_put_Gamma(src->hCam, src->gamma);
+            camsdk_(put_Gamma)(src->hCam, src->gamma);
         }
         break;
 
     case PROP_BB_R:
         src->black_balance[0] = g_value_get_int (value);
         if (src->hCam) {
-            Toupcam_put_BlackBalance(src->hCam, src->black_balance);
+            camsdk_(put_BlackBalance)(src->hCam, src->black_balance);
         }
         break;
     case PROP_BB_G:
         src->black_balance[1] = g_value_get_int (value);
         if (src->hCam) {
-            Toupcam_put_BlackBalance(src->hCam, src->black_balance);
+            camsdk_(put_BlackBalance)(src->hCam, src->black_balance);
         }
         break;
     case PROP_BB_B:
         src->black_balance[2] = g_value_get_int (value);
         if (src->hCam) {
-            Toupcam_put_BlackBalance(src->hCam, src->black_balance);
+            camsdk_(put_BlackBalance)(src->hCam, src->black_balance);
         }
         break;
 
     case PROP_WB_R:
         src->white_balance[0] = g_value_get_int (value);
         if (src->hCam) {
-            Toupcam_put_WhiteBalanceGain(src->hCam, src->white_balance);
+            camsdk_(put_WhiteBalanceGain)(src->hCam, src->white_balance);
         }
         break;
     case PROP_WB_G:
         src->white_balance[1] = g_value_get_int (value);
         if (src->hCam) {
-            Toupcam_put_WhiteBalanceGain(src->hCam, src->white_balance);
+            camsdk_(put_WhiteBalanceGain)(src->hCam, src->white_balance);
         }
         break;
     case PROP_WB_B:
         src->white_balance[2] = g_value_get_int (value);
         if (src->hCam) {
-            Toupcam_put_WhiteBalanceGain(src->hCam, src->white_balance);
+            camsdk_(put_WhiteBalanceGain)(src->hCam, src->white_balance);
         }
         break;
 
     case PROP_AWB_RGB:
         if (!(src->awb_rgb || src->awb_tt)) {
             //fail...
-            if (FAILED(Toupcam_AwbInit(src->hCam, my_rgb_cb, src))) {
+            if (FAILED(camsdk_(AwbInit)(src->hCam, my_rgb_cb, src))) {
                 GST_ERROR_OBJECT (src, "failed to awb rgb");
                 src->awb_rgb = 0;
             } else {
@@ -424,7 +416,7 @@ gst_toupcam_src_set_property (GObject * object, guint property_id,
     case PROP_AWB_TT:
         if (!(src->awb_rgb || src->awb_tt)) {
             //ok
-            if (FAILED(Toupcam_AwbOnce(src->hCam, my_tt_cb, src))) {
+            if (FAILED(camsdk_(AwbOnce)(src->hCam, my_tt_cb, src))) {
                 GST_ERROR_OBJECT (src, "failed to awb tt");
                 src->awb_tt = 0;
             } else {
@@ -441,13 +433,13 @@ gst_toupcam_src_set_property (GObject * object, guint property_id,
 
 static void try_get_black_balance(GstToupCamSrc *src) {
     if (src->hCam) {
-        Toupcam_get_BlackBalance(src->hCam, src->black_balance);
+        camsdk_(get_BlackBalance)(src->hCam, src->black_balance);
     }
 }
 
 static void try_get_white_balance(GstToupCamSrc *src) {
     if (src->hCam) {
-        Toupcam_get_WhiteBalanceGain(src->hCam, src->white_balance);
+        camsdk_(get_WhiteBalanceGain)(src->hCam, src->white_balance);
     }
 }
 
@@ -469,56 +461,56 @@ gst_toupcam_src_get_property (GObject * object, guint property_id,
         break;
     case PROP_HFLIP: 
         if (src->hCam) {
-            Toupcam_get_HFlip(src->hCam, &src->hflip);
+            camsdk_(get_HFlip)(src->hCam, &src->hflip);
         }
         g_value_set_boolean (value, src->hflip);
         break;
     case PROP_VFLIP:
         if (src->hCam) {
-            Toupcam_get_VFlip(src->hCam, &src->vflip);
+            camsdk_(get_VFlip)(src->hCam, &src->vflip);
         }
         g_value_set_boolean (value, src->vflip);
         break;
     case PROP_AUTO_EXPOSURE:
         if (src->hCam) {
-            Toupcam_get_AutoExpoEnable(src->hCam, &src->auto_exposure);
+            camsdk_(get_AutoExpoEnable)(src->hCam, &src->auto_exposure);
         }
         g_value_set_boolean (value, src->auto_exposure);
         break;
     case PROP_EXPOTIME:
         if (src->hCam) {
-            Toupcam_get_ExpoTime(src->hCam, &src->expotime);
+            camsdk_(get_ExpoTime)(src->hCam, &src->expotime);
         }
         g_value_set_int (value, src->expotime);
         break;
 
     case PROP_HUE:
         if (src->hCam) {
-            Toupcam_get_Hue(src->hCam, &src->hue);
+            camsdk_(get_Hue)(src->hCam, &src->hue);
         }
         g_value_set_int (value, src->hue);
         break;
     case PROP_SATURATION:
         if (src->hCam) {
-            Toupcam_get_Saturation(src->hCam, &src->saturation);
+            camsdk_(get_Saturation)(src->hCam, &src->saturation);
         }
         g_value_set_int (value, src->saturation);
         break;
     case PROP_BRIGHTNESS:
         if (src->hCam) {
-            Toupcam_get_Brightness(src->hCam, &src->brightness);
+            camsdk_(get_Brightness)(src->hCam, &src->brightness);
         }
         g_value_set_int (value, src->brightness);
         break;
     case PROP_CONTRAST:
         if (src->hCam) {
-            Toupcam_get_Contrast(src->hCam, &src->contrast);
+            camsdk_(get_Contrast)(src->hCam, &src->contrast);
         }
         g_value_set_int (value, src->contrast);
         break;
     case PROP_GAMMA:
         if (src->hCam) {
-            Toupcam_get_Gamma(src->hCam, &src->gamma);
+            camsdk_(get_Gamma)(src->hCam, &src->gamma);
         }
         g_value_set_int (value, src->gamma);
         break;
@@ -597,7 +589,7 @@ static void EventCallback(unsigned nEvent, void* pCallbackCtx)
 {
     GstToupCamSrc *src = GST_TOUPCAM_SRC (pCallbackCtx);
     GST_DEBUG_OBJECT (src, "event callback: %d\n", nEvent);
-    if (TOUPCAM_EVENT_IMAGE == nEvent)
+    if (CAMSDK_(EVENT_IMAGE) == nEvent)
     {
         g_mutex_lock(&src->mutex);
         src->imagesAvailable++;
@@ -608,7 +600,7 @@ static void EventCallback(unsigned nEvent, void* pCallbackCtx)
     {
         GST_DEBUG_OBJECT (src, "event callback: %d\n", nEvent);
     }
-    GST_DEBUG("calllback %u (want %u), images now %u", nEvent, TOUPCAM_EVENT_IMAGE, src->imagesAvailable);
+    GST_DEBUG("calllback %u (want %u), images now %u", nEvent, CAMSDK_(EVENT_IMAGE), src->imagesAvailable);
 }
 
 void gst_toupcam_pdebug(GstToupCamSrc *src) {
@@ -618,77 +610,77 @@ void gst_toupcam_pdebug(GstToupCamSrc *src) {
     char buff[64];
 
     printf("Camera info\n");
-    printf("  max bit depth: %d\n", Toupcam_get_MaxBitDepth(src->hCam));
-    printf("  max fan speed: %d\n", Toupcam_get_FanMaxSpeed(src->hCam));
-    printf("  max frame speed: %d\n", Toupcam_get_MaxSpeed(src->hCam));
-    printf("  mono mode: %d\n", Toupcam_get_MonoMode(src->hCam));
-    int resn = Toupcam_get_StillResolutionNumber(src->hCam);
+    printf("  max bit depth: %d\n", camsdk_(get_MaxBitDepth)(src->hCam));
+    printf("  max fan speed: %d\n", camsdk_(get_FanMaxSpeed)(src->hCam));
+    printf("  max frame speed: %d\n", camsdk_(get_MaxSpeed)(src->hCam));
+    printf("  mono mode: %d\n", camsdk_(get_MonoMode)(src->hCam));
+    int resn = camsdk_(get_StillResolutionNumber)(src->hCam);
     printf("  still resolution number: %d\n", resn);
     for (int resi = 0; resi < resn; ++resi) {
         int width, height;
-        if (!FAILED(Toupcam_get_StillResolution(src->hCam, resi, &width, &height))) {
+        if (!FAILED(camsdk_(get_StillResolution)(src->hCam, resi, &width, &height))) {
             printf("    %u: %i x %i\n", resi, width, height);
         }
         float pixx, pixy;
-        if (!FAILED(Toupcam_get_PixelSize(src->hCam, resi, &pixx, &pixy))) {
+        if (!FAILED(camsdk_(get_PixelSize)(src->hCam, resi, &pixx, &pixy))) {
             printf("    %u: %0.1f x %0.1f um\n", resi, pixx, pixy);
         }
     }
 
-    if (!FAILED(Toupcam_get_Negative(src->hCam, &itmp))) {
+    if (!FAILED(camsdk_(get_Negative)(src->hCam, &itmp))) {
         printf("  negative: %d\n", itmp);
     }
-    if (!FAILED(Toupcam_get_Chrome(src->hCam, &itmp))) {
+    if (!FAILED(camsdk_(get_Chrome)(src->hCam, &itmp))) {
         printf("  chrome: %d\n", itmp);
     }
-    if (!FAILED(Toupcam_get_HZ(src->hCam, &itmp))) {
+    if (!FAILED(camsdk_(get_HZ)(src->hCam, &itmp))) {
         printf("  hz: %d\n", itmp);
     }
-    if (!FAILED(Toupcam_get_Mode(src->hCam, &itmp))) {
+    if (!FAILED(camsdk_(get_Mode)(src->hCam, &itmp))) {
         printf("  mode: %d\n", itmp);
     }
-    if (!FAILED(Toupcam_get_RealTime(src->hCam, &itmp))) {
+    if (!FAILED(camsdk_(get_RealTime)(src->hCam, &itmp))) {
         printf("  real time: %d\n", itmp);
     }
 
-    if (!FAILED(Toupcam_get_Temperature(src->hCam, &stmp))) {
+    if (!FAILED(camsdk_(get_Temperature)(src->hCam, &stmp))) {
         printf("  temperature: %d\n", stmp);
     }
-    if (!FAILED(Toupcam_get_Revision(src->hCam, &ustmp))) {
+    if (!FAILED(camsdk_(get_Revision)(src->hCam, &ustmp))) {
         printf("  revision: %d\n", ustmp);
     }
 
-    if (!FAILED(Toupcam_get_SerialNumber(src->hCam, buff))) {
+    if (!FAILED(camsdk_(get_SerialNumber)(src->hCam, buff))) {
         printf("  serial number: %s\n", buff);
     }
-    if (!FAILED(Toupcam_get_FwVersion(src->hCam, buff))) {
+    if (!FAILED(camsdk_(get_FwVersion)(src->hCam, buff))) {
         printf("  fw version: %s\n", buff);
     }
-    if (!FAILED(Toupcam_get_HwVersion(src->hCam, buff))) {
+    if (!FAILED(camsdk_(get_HwVersion)(src->hCam, buff))) {
         printf("  hw version: %s\n", buff);
     }
-    if (!FAILED(Toupcam_get_ProductionDate(src->hCam, buff))) {
+    if (!FAILED(camsdk_(get_ProductionDate)(src->hCam, buff))) {
         printf("  production date: %s\n", buff);
     }
-    if (!FAILED(Toupcam_get_FpgaVersion(src->hCam, buff))) {
+    if (!FAILED(camsdk_(get_FpgaVersion)(src->hCam, buff))) {
         printf("  fpga version: %s\n", buff);
     }
     /*
-    if (!FAILED(Toupcam_get_Name(id, buff))) {
+    if (!FAILED(camsdk_(get_Name)(id, buff))) {
         printf("  name: %s\n", buff);
     }
     */
     //0 => #define TOUPCAM_PIXELFORMAT_RAW8             0x00
-    Toupcam_get_Option(src->hCam, TOUPCAM_OPTION_PIXEL_FORMAT, &itmp);
+    camsdk_(get_Option)(src->hCam, CAMSDK_(OPTION_PIXEL_FORMAT), &itmp);
         printf("  pixel format: %i\n", itmp);
 
 
     char nFourCC[4];
     unsigned bitsperpixel;
-    Toupcam_get_RawFormat(src->hCam, (unsigned *)&nFourCC, &bitsperpixel);
+    camsdk_(get_RawFormat)(src->hCam, (unsigned *)&nFourCC, &bitsperpixel);
     //raw code GBRG, bpp 8
     //needs this to get the full 12 bit
-    //Toupcam_put_Option(src->hCam, TOUPCAM_OPTION_PIXEL_FORMAT, TOUPCAM_PIXELFORMAT_RAW12);
+    //camsdk_(put_Option)(src->hCam, CAMSDK_(OPTION_PIXEL_FORMAT), CAMSDK_(PIXELFORMAT_RAW12));
     //raw code GBRG, bpp 12
     printf("  raw code %c%c%c%c, bpp %u\n", nFourCC[0], nFourCC[1], nFourCC[2], nFourCC[3], bitsperpixel);
 }
@@ -696,8 +688,8 @@ void gst_toupcam_pdebug(GstToupCamSrc *src) {
 static gboolean
 gst_toupcam_src_start (GstBaseSrc * bsrc)
 {
+    camsdk(DeviceV2) arr[CAMSDK_(MAX)];
 
-    ToupcamDeviceV2 arr[TOUPCAM_MAX];
     unsigned cnt = 0;
     char  at_id[65];
 
@@ -711,10 +703,10 @@ gst_toupcam_src_start (GstBaseSrc * bsrc)
 //    gst_base_src_set_do_timestamp(bsrc, TRUE);
 
     // read libversion (for informational purposes only)
-    GST_INFO_OBJECT (src, "ToupCam Library Ver %s", Toupcam_Version());
+    GST_INFO_OBJECT (src, "ToupCam Library Ver %s", camsdk_(Version)());
 
     // enumerate devices (needed to get device id in order to prepend with "@" to enable RGB gain functions)
-    cnt = Toupcam_EnumV2(arr);
+    cnt = camsdk_(EnumV2)(arr);
     GST_INFO_OBJECT (src, "Found %d devices", cnt);
     if (cnt < 1) {
         GST_ERROR_OBJECT(src, "No ToupCam devices found");
@@ -724,7 +716,7 @@ gst_toupcam_src_start (GstBaseSrc * bsrc)
     GST_DEBUG_OBJECT (src, "Toupcam_Open");
     // open first usable device id preprended with "@"
     snprintf(at_id, 65, "@%s", arr[0].id);
-    src->hCam = Toupcam_Open(at_id);
+    src->hCam = camsdk_(Open)(at_id);
     if (NULL == src->hCam)
     {
         GST_ERROR_OBJECT(src, "open failed");
@@ -734,12 +726,12 @@ gst_toupcam_src_start (GstBaseSrc * bsrc)
 
     HRESULT hr;
 
-    hr = Toupcam_put_eSize(src->hCam, src->esize);
+    hr = camsdk_(put_eSize)(src->hCam, src->esize);
     if (FAILED(hr)) {
         GST_ERROR_OBJECT(src, "failed to set size, hr = %08x", hr);
         goto fail;
     }
-    hr = Toupcam_get_Size(src->hCam, &src->nWidth, &src->nHeight);
+    hr = camsdk_(get_Size)(src->hCam, &src->nWidth, &src->nHeight);
     if (FAILED(hr)) {
         GST_ERROR_OBJECT(src, "failed to get size, hr = %08x", hr);
         goto fail;
@@ -752,7 +744,7 @@ gst_toupcam_src_start (GstBaseSrc * bsrc)
         //default raw8
         GST_DEBUG_OBJECT (src, "setting up raw");
         if (1) {
-            hr = Toupcam_put_Option(src->hCam, TOUPCAM_OPTION_PIXEL_FORMAT, TOUPCAM_PIXELFORMAT_RAW12);
+            hr = camsdk_(put_Option)(src->hCam, CAMSDK_(OPTION_PIXEL_FORMAT), CAMSDK_(PIXELFORMAT_RAW12));
             if (FAILED(hr)) {
                 GST_ERROR_OBJECT (src, "failed to set pixel format, hr = %08x", hr);
                 goto fail;
@@ -761,7 +753,7 @@ gst_toupcam_src_start (GstBaseSrc * bsrc)
         //no output when this is enabled...why?
         if (1) {
             //enable raw
-            hr = Toupcam_put_Option(src->hCam, TOUPCAM_OPTION_RAW, 1);
+            hr = camsdk_(put_Option)(src->hCam, CAMSDK_(OPTION_RAW), 1);
             if (FAILED(hr)) {
                 GST_ERROR_OBJECT (src, "failed to enable raw, hr = %08x", hr);
                 goto fail;
@@ -769,7 +761,7 @@ gst_toupcam_src_start (GstBaseSrc * bsrc)
         }
         if (1) {
             //16 bit output
-            hr = Toupcam_put_Option(src->hCam, TOUPCAM_OPTION_BITDEPTH, 1);
+            hr = camsdk_(put_Option)(src->hCam, CAMSDK_(OPTION_BITDEPTH), 1);
             if (FAILED(hr)) {
                 GST_ERROR_OBJECT (src, "failed to enable 16 bit, hr = %08x", hr);
                 goto fail;
@@ -781,71 +773,44 @@ gst_toupcam_src_start (GstBaseSrc * bsrc)
         GST_DEBUG_OBJECT (src, "setting up x16");
 
         //16 bit output
-        hr = Toupcam_put_Option(src->hCam, TOUPCAM_OPTION_BITDEPTH, 1);
+        hr = camsdk_(put_Option)(src->hCam, CAMSDK_(OPTION_BITDEPTH), 1);
         if (FAILED(hr)) {
             GST_ERROR_OBJECT (src, "failed to enable 16 bit, hr = %08x", hr);
             goto fail;
         }
 
         //RGB48
-        hr = Toupcam_put_Option(src->hCam, TOUPCAM_OPTION_RGB, 1);
+        hr = camsdk_(put_Option)(src->hCam, CAMSDK_(OPTION_RGB), 1);
         if (FAILED(hr)) {
             GST_ERROR_OBJECT (src, "failed to enable raw, hr = %08x", hr);
             goto fail;
         }
     } else {
         GST_DEBUG_OBJECT (src, "setting up regular");
-        Toupcam_put_Option(src->hCam, TOUPCAM_OPTION_BYTEORDER, TOUPCAM_OPTION_BYTEORDER_RGB);
-        Toupcam_put_Hue(src->hCam, src->hue);
-        Toupcam_put_Saturation(src->hCam, src->saturation);
-        Toupcam_put_Brightness(src->hCam, src->brightness);
-        Toupcam_put_Contrast(src->hCam, src->contrast);
-        Toupcam_put_Gamma(src->hCam, src->gamma);
+        camsdk_(put_Option)(src->hCam, CAMSDK_(OPTION_BYTEORDER), GST_TOUPCAM_OPTION_BYTEORDER_RGB);
+        camsdk_(put_Hue)(src->hCam, src->hue);
+        camsdk_(put_Saturation)(src->hCam, src->saturation);
+        camsdk_(put_Brightness)(src->hCam, src->brightness);
+        camsdk_(put_Contrast)(src->hCam, src->contrast);
+        camsdk_(put_Gamma)(src->hCam, src->gamma);
     }
 
 
-    Toupcam_put_HFlip(src->hCam, src->hflip);
-    Toupcam_put_VFlip(src->hCam, src->vflip);
-    hr = Toupcam_put_AutoExpoEnable(src->hCam, src->auto_exposure);
+    camsdk_(put_HFlip)(src->hCam, src->hflip);
+    camsdk_(put_VFlip)(src->hCam, src->vflip);
+    hr = camsdk_(put_AutoExpoEnable)(src->hCam, src->auto_exposure);
     if (FAILED(hr)) {
         GST_ERROR_OBJECT (src, "failed to auto exposure, hr = %08x", hr);
         goto fail;
     }
     if (!src->auto_exposure) {
         //setting this severely interferes with auto exposure
-        Toupcam_put_ExpoTime(src->hCam, src->expotime);
+        camsdk_(put_ExpoTime)(src->hCam, src->expotime);
     }
 
 
-    // Colour format
-
-
-
-
-
-    
-    //real time
-    //Toupcam_put_RealTime(src->hCam, 1);
-
-    /*
-    //maybe rgb gain better, but not well documented
-    int aGain = {10, 10, 10};
-    Toupcam_put_WhiteBalanceGain(src->hCam, aGain);
-
-    unsigned us = 50000;
-    for (unsigned rgb = 1; rgb < 4; ++rgb) {
-        Toupcam_put_Option(src->hCam, TOUPCAM_OPTION_SEQUENCER_EXPOTIME | rgb, us);
-    }
-    */
-
-    /*
-    int aGain[3] = {80, 0, 0};
-    Toupcam_put_WhiteBalanceGain(src->hCam, aGain);
-    */
-    
-
-
-    // We support just colour of one type, BGR 24-bit, I am not attempting to support all camera types
+    //BGR 24-bit is primarily supported
+    //Some attempts at 16 bit
     if (src->raw || src->x16) {
         src->bits_per_pix_out = 64;
         src->bytes_per_pix_out = 8;
@@ -857,7 +822,7 @@ gst_toupcam_src_start (GstBaseSrc * bsrc)
     }
 
     unsigned nFrame, nTime, nTotalFrame;
-    Toupcam_get_FrameRate(src->hCam, &nFrame, &nTime, &nTotalFrame);
+    camsdk_(get_FrameRate)(src->hCam, &nFrame, &nTime, &nTotalFrame);
     src->framerate = nFrame * 1000.0 / nTime;
     src->duration = 1000000000.0/src->framerate;
     
@@ -872,7 +837,7 @@ gst_toupcam_src_start (GstBaseSrc * bsrc)
     //TODO: move from static buff to frame_buff
     src->frame_buff = NULL;
 
-    hr = Toupcam_StartPullModeWithCallback(src->hCam, EventCallback, src);
+    hr = camsdk_(StartPullModeWithCallback)(src->hCam, EventCallback, src);
     if (FAILED(hr)) {
         GST_ERROR_OBJECT (src, "failed to start camera, hr = %08x", hr);
         goto fail;
@@ -896,7 +861,7 @@ gst_toupcam_src_stop (GstBaseSrc * bsrc)
     GstToupCamSrc *src = GST_TOUPCAM_SRC (bsrc);
 
     GST_DEBUG_OBJECT (src, "stop");
-    Toupcam_Close(src->hCam);
+    camsdk_(Close)(src->hCam);
 
     gst_toupcam_src_reset (src);
 
@@ -1094,14 +1059,12 @@ static GstFlowReturn pull_decode_frame(GstToupCamSrc *src, GstBuffer * buf)
         return GST_FLOW_ERROR;
     }
 
-    ToupcamFrameInfoV2 info = { 0 };
+    camsdk(FrameInfoV2) info = { 0 };
     if (src->raw) {
         /*
         RGBA, 16 bit => 4 * 2 => 64 bit
         Source data raw => densely packed into 16 bit areas
         */
-        //memset(minfo.data, 0x80, 5440 * 3648 * 4 * 2);
-        //memset(minfo.data, 0x60, 5440 * 3648 * 4 * 1);
 
         if (sizeof(raw_buff) < src->image_bytes_in) {
             gst_buffer_unmap (buf, &minfo);
@@ -1111,7 +1074,7 @@ static GstFlowReturn pull_decode_frame(GstToupCamSrc *src, GstBuffer * buf)
 
         // From the grabber source we get 1 progressive frame
         GST_DEBUG_OBJECT (src, "pulling raw image");
-        HRESULT hr = Toupcam_PullImageV2(src->hCam, &raw_buff, 0, &info);
+        HRESULT hr = camsdk_(PullImageV2)(src->hCam, &raw_buff, 0, &info);
         if (FAILED(hr)) {
             GST_ERROR_OBJECT (src, "failed to pull image, hr = %08x", hr);
             gst_buffer_unmap (buf, &minfo);
@@ -1137,7 +1100,7 @@ static GstFlowReturn pull_decode_frame(GstToupCamSrc *src, GstBuffer * buf)
         }
 
         GST_DEBUG_OBJECT (src, "pulling x16 image");
-        HRESULT hr = Toupcam_PullImageV2(src->hCam, &raw_buff, 48, &info);
+        HRESULT hr = camsdk_(PullImageV2)(src->hCam, &raw_buff, 48, &info);
         if (FAILED(hr)) {
             GST_ERROR_OBJECT (src, "failed to pull image, hr = %08x", hr);
             gst_buffer_unmap (buf, &minfo);
@@ -1148,7 +1111,7 @@ static GstFlowReturn pull_decode_frame(GstToupCamSrc *src, GstBuffer * buf)
         RGB48_to_ARGB64_x4(src, raw_buff, minfo.data);
     } else {
         GST_DEBUG_OBJECT (src, "pulling x8 image");
-        HRESULT hr = Toupcam_PullImageV2(src->hCam, minfo.data, 24, &info);
+        HRESULT hr = camsdk_(PullImageV2)(src->hCam, minfo.data, 24, &info);
         if (FAILED(hr)) {
             GST_ERROR_OBJECT (src, "failed to pull image, hr = %08x", hr);
             gst_buffer_unmap (buf, &minfo);
@@ -1172,22 +1135,6 @@ static GstFlowReturn gst_toupcam_src_alloc (GstPushSrc * psrc, GstBuffer ** buf)
 
     GstToupCamSrc *src = GST_TOUPCAM_SRC (psrc);
 
-    /*
-    GST_DEBUG_OBJECT (src, "");
-    GST_DEBUG_OBJECT (src, "waiting for new image");
-
-    // lock next (raw) image for read access, convert it to the desired
-    // format and unlock it again, so that grabbing can go on
-
-    if (wait_new_frame(src) != GST_FLOW_OK) {
-        return GST_FLOW_ERROR;
-    }
-    */
-
-    //  successfully returned an image
-    // ----------------------------------------------------------
-
-
     *buf = gst_buffer_new_allocate (NULL, src->image_bytes_out, NULL);
     if (G_UNLIKELY (*buf == NULL)) {
        GST_DEBUG_OBJECT (src, "Failed to allocate %u bytes", src->image_bytes_out);
@@ -1204,83 +1151,26 @@ static GstFlowReturn gst_toupcam_src_alloc (GstPushSrc * psrc, GstBuffer ** buf)
 static GstFlowReturn
 gst_toupcam_src_fill (GstPushSrc * psrc, GstBuffer * buf)
 {
-
     GstToupCamSrc *src = GST_TOUPCAM_SRC (psrc);
 
     //printf("Want %d buffers have %d\n", psrc->parent.num_buffers, src->n_frames);
-    if (psrc->parent.num_buffers>0)  // If we were asked for a specific number of buffers, stop when complete
+    // If we were asked for a specific number of buffers, stop when complete
+    if (psrc->parent.num_buffers>0) {
         if (G_UNLIKELY(src->n_frames >= psrc->parent.num_buffers)) {
             GST_DEBUG_OBJECT (src, "EOS");
             return GST_FLOW_EOS;
         }
-
+    }
 
     GST_DEBUG_OBJECT (src, " ");
     GST_DEBUG_OBJECT (src, "waiting for new image");
 
-    // lock next (raw) image for read access, convert it to the desired
-    // format and unlock it again, so that grabbing can go on
-
     if (wait_new_frame(src) != GST_FLOW_OK) {
         return GST_FLOW_ERROR;
     }
-
-    //  successfully returned an image
-    // ----------------------------------------------------------
-
     if (pull_decode_frame(src, buf) != GST_FLOW_OK) {
         return GST_FLOW_ERROR;
     }
-
-    if (0) {
-        int aGain[3];
-        if (FAILED(Toupcam_get_WhiteBalanceGain(src->hCam, aGain))) {
-            printf("fail get gain rgb\n");
-        } else {
-            printf("gain %u %u %u\n", aGain[0], aGain[1], aGain[2]);
-        }
-    }
-    if (0) {
-        //0 0 0
-        unsigned short aSub[3];
-        if (FAILED(Toupcam_get_BlackBalance(src->hCam, aSub))) {
-            printf("fail get bb\n");
-        } else {
-            printf("bb %u %u %u\n", aSub[0], aSub[1], aSub[2]);
-        }
-    }
-    if (0) {
-        int nTemp;
-        int nTint;
-        if (FAILED(Toupcam_get_TempTint(src->hCam, &nTemp, &nTint))) {
-            printf("fail get gain tt\n");
-        } else {
-            //gain 6503 1000
-            printf("gain %i %i\n", nTemp, nTint);
-        }
-    }
-    
-
-
-    if (0) {
-        if (FAILED(Toupcam_put_TempTint(src->hCam, 653, 100))) {
-            printf("fail set gain tt\n");
-        }
-    }
-    //works!
-    if (0) {
-        unsigned short aSub[3] = {0, 100, 0};
-        if (FAILED(Toupcam_put_BlackBalance(src->hCam, aSub))) {
-            printf("fail set bb\n");
-        }
-    }
-    if (0) {
-        int aGain[3] = {10, 20, 30};
-        if (FAILED(Toupcam_put_WhiteBalanceGain(src->hCam, aGain))) {
-            printf("fail set gain rgb\n");
-        }
-    }
-    
 
     /*
     // If we do not use gst_base_src_set_do_timestamp() we need to add timestamps manually
@@ -1296,14 +1186,9 @@ gst_toupcam_src_fill (GstPushSrc * psrc, GstBuffer * buf)
     GST_BUFFER_DTS(buf) = GST_CLOCK_TIME_NONE;
     GST_BUFFER_DURATION(buf) = GST_CLOCK_TIME_NONE;
 
-
     // count frames, and send EOS when required frame number is reached
     GST_BUFFER_OFFSET(buf) = src->n_frames;  // from videotestsrc
     src->n_frames++;
-
-
-    // see, if we had to drop some frames due to data transfer stalls. if so,
-    // output a message
 
     return GST_FLOW_OK;
 }

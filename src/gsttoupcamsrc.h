@@ -1,6 +1,7 @@
 /* GStreamer ToupCam Plugin
- * Copyright (C) 2020 
+ * Copyright (C) 2022 Labsmore LLC
  *
+ * Author John McMaster <johndmcmaster@gmail.com>
  * Author Kishore Arepalli <kishore.arepalli@gmail.com>
  */
 
@@ -9,7 +10,40 @@
 
 #include <gst/base/gstpushsrc.h>
 
+/*
+ToupTek Photonics SDK gets rebranded to a few other things
+Ease integration with other variants
+
+
+Ex:
+TOUPCAM_API(HToupcam) Toupcam_OpenByIndex(unsigned index);
+NNCAM_API(HNncam) Nncam_OpenByIndex(unsigned index);
+etc
+
+TODO: add tucsen rebrand
+
+*/
+
+//#define CAMSDK_TOUPTEK
+#define CAMSDK_NNCAM
+// Ex: toupcamsdk.h: Version: 53.21522.20221011
+#define CAMSDK_VERSION 53
+
+#if defined(CAMSDK_TOUPTEK)
 #include  <toupcam.h>
+#define camsdk(x) Toupcam ## x
+#define camsdk_(x) Toupcam_ ## x
+#define CAMSDK_(x) TOUPCAM_ ## x
+#elif defined(CAMSDK_NNCAM)
+#include <nncam.h>
+#define camsdk(x) Nncam ## x
+#define camsdk_(x) Nncam_ ## x
+#define CAMSDK_(x) NNCAM_ ## x
+#else
+#error Need SDK brand
+#endif
+
+
 
 G_BEGIN_DECLS
 
@@ -27,7 +61,18 @@ struct _GstToupCamSrc
     GstPushSrc base_toupcam_src;
 
     // device
-    HToupcam hCam;  // device handle
+    /*
+    hmm...code diverged?
+    Version: 50.19728.20211022
+    typedef struct ToupcamT { int unused; } *HToupcam, *HToupCam;
+    53.21522.20221011
+    typedef struct Nncam_t { int unused; } *HNncam;
+    */
+#if CAMSDK_VERSION >= 53
+    HNncam hCam;  // device handle
+#else
+    HToupcam hCam;
+#endif
     gboolean raw;
     gboolean x16;
     gint esize;

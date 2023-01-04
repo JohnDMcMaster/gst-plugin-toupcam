@@ -45,6 +45,7 @@ Install
 
     # on x86_64
     sudo cp linux/x64/libtoupcam.so /lib/x86_64-linux-gnu/
+    # sudo cp linux/x64/libnncam.so /lib/x86_64-linux-gnu/
     # on raspberry pi
     sudo cp linux/armhf/libtoupcam.so /lib/arm-linux-gnueabihf/
 

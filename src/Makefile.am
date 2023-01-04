@@ -3,8 +3,8 @@
 plugin_LTLIBRARIES = libgsttoupcamsrc.la
 
 # Path to installation of the toupcam SDK
-TOUPCAM_CFLAGS = -I/opt/toupcamsdk/inc -Werror
-TOUPCAM_LIBS = -ltoupcam
+TOUPCAM_CFLAGS = -I/opt/nncamsdk/inc -Werror
+TOUPCAM_LIBS = -lnncam
 
 # sources used to compile this plug-in
 libgsttoupcamsrc_la_SOURCES = gsttoupcamsrc.c gsttoupcamsrc.h gstplugin.c

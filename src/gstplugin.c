@@ -1,3 +1,10 @@
+/* GStreamer ToupCam Plugin
+ * Copyright (C) 2022 Labsmore LLC
+ *
+ * Author John McMaster <johndmcmaster@gmail.com>
+ * Author Kishore Arepalli <kishore.arepalli@gmail.com>
+ */
+
 #ifdef HAVE_CONFIG_H
 #include "config.h"
 #endif

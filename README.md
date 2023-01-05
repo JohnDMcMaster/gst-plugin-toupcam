@@ -89,6 +89,23 @@ See the INSTALL file for advanced setup.
 To import into the Eclipse IDE, use "existing code as Makefile project", and the file EclipseSymbolsAndIncludePaths.xml is included here
 to import the library locations into the project (Properties -> C/C++ General -> Paths and symbols).
 
+To get camera resolutions:
+
+    GST_TOUPCAMSRC_INFO=Y gst-launch-1.0 toupcamsrc
+
+Which will include something like:
+
+  Still resolutions: 3
+    esize 0
+          5440 x 3648
+          2.4 x 2.4 um
+    esize 1
+          2736 x 1824
+          4.8 x 4.8 um
+    esize 2
+          1824 x 1216
+          7.2 x 7.2 um
+
 Locations
 ---------
 

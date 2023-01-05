@@ -60,6 +60,7 @@ static GstFlowReturn gst_toupcam_src_fill(GstPushSrc * src,
                                           GstBuffer * buf);
 static GstFlowReturn gst_toupcam_src_alloc(GstPushSrc * psrc,
                                            GstBuffer ** buf);
+void gst_toupcam_pdebug(GstToupCamSrc * src);
 
 // static GstCaps *gst_toupcam_src_create_caps (GstToupCamSrc * src);
 static void gst_toupcam_src_reset(GstToupCamSrc * src);
@@ -306,6 +307,9 @@ static void gst_toupcam_src_class_init(GstToupCamSrcClass * klass)
                                                          0,
                                                          G_PARAM_READABLE |
                                                          G_PARAM_WRITABLE));
+
+
+
 }
 
 static void gst_toupcam_src_init(GstToupCamSrc * src)
@@ -685,17 +689,22 @@ void gst_toupcam_pdebug(GstToupCamSrc * src)
     printf("  max frame speed: %d\n", camsdk_(get_MaxSpeed) (src->hCam));
     printf("  mono mode: %d\n", camsdk_(get_MonoMode) (src->hCam));
     int resn = camsdk_(get_StillResolutionNumber) (src->hCam);
-    printf("  still resolution number: %d\n", resn);
-    for (int resi = 0; resi < resn; ++resi) {
-        int width, height;
-        if (!FAILED(camsdk_(get_StillResolution)
-                    (src->hCam, resi, &width, &height))) {
-            printf("    %u: %i x %i\n", resi, width, height);
-        }
-        float pixx, pixy;
-        if (!FAILED
-            (camsdk_(get_PixelSize) (src->hCam, resi, &pixx, &pixy))) {
-            printf("    %u: %0.1f x %0.1f um\n", resi, pixx, pixy);
+    printf("  Still resolutions: %d\n", resn);
+    if (resn < 0) {
+        printf("    Failed :(\n");
+    } else {
+        for (int resi = 0; resi < resn; ++resi) {
+            printf("    esize %d\n", resi);
+            int width, height;
+            if (!FAILED(camsdk_(get_StillResolution)
+                        (src->hCam, resi, &width, &height))) {
+                printf("          %i x %i\n", width, height);
+            }
+            float pixx, pixy;
+            if (!FAILED
+                (camsdk_(get_PixelSize) (src->hCam, resi, &pixx, &pixy))) {
+                printf("          %0.1f x %0.1f um\n", pixx, pixy);
+            }
         }
     }
 
@@ -796,7 +805,10 @@ static gboolean gst_toupcam_src_start(GstBaseSrc * bsrc)
         GST_ERROR_OBJECT(src, "open failed");
         goto fail;
     }
-    // gst_toupcam_pdebug(src);
+
+    if (getenv("GST_TOUPCAMSRC_INFO")) {
+        gst_toupcam_pdebug(src);
+    }
 
     HRESULT hr;
 

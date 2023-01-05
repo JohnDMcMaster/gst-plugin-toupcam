@@ -24,9 +24,22 @@ TODO: add tucsen rebrand
 
 */
 
-//#define CAMSDK_TOUPTEK
-#define CAMSDK_NNCAM
-// Ex: toupcamsdk.h: Version: 53.21522.20221011
+//XXX: SDK_BRANDING
+#define CAMSDK_TOUPTEK
+//Amscope
+//#define CAMSDK_AMCAM
+//? "MIView", Came with 25 MP camera
+//#define CAMSDK_NNCAM
+//Swift
+//#define CAMSDK_SWIFTCAM
+
+/*
+Ex: toupcamsdk.h: Version: 53.21522.20221011 => 53
+
+In general we support only the latest version
+But some backwards compatibility is ok when easy / convenient
+Ex: we have a non-public SDK release but also want to support latest public release
+*/
 #define CAMSDK_VERSION 53
 
 #if defined(CAMSDK_TOUPTEK)
@@ -34,11 +47,23 @@ TODO: add tucsen rebrand
 #define camsdk(x) Toupcam ## x
 #define camsdk_(x) Toupcam_ ## x
 #define CAMSDK_(x) TOUPCAM_ ## x
+#define CAMSDK_HANDLE HToupcam
+#elif defined(CAMSDK_AMCAM)
+#include <amcam.h>
+#define camsdk(x) Amcam ## x
+#define camsdk_(x) Amcam_ ## x
+#define CAMSDK_(x) AMCAM_ ## x
 #elif defined(CAMSDK_NNCAM)
 #include <nncam.h>
 #define camsdk(x) Nncam ## x
 #define camsdk_(x) Nncam_ ## x
 #define CAMSDK_(x) NNCAM_ ## x
+#define CAMSDK_HANDLE HNncam
+#elif defined(CAMSDK_SWIFTCAM)
+#include <swiftcam.h>
+#define camsdk(x) Swiftcam ## x
+#define camsdk_(x) Swiftcam_ ## x
+#define CAMSDK_(x) SWIFTCAM_ ## x
 #else
 #error Need SDK brand
 #endif
@@ -68,11 +93,7 @@ struct _GstToupCamSrc
     53.21522.20221011
     typedef struct Nncam_t { int unused; } *HNncam;
     */
-#if CAMSDK_VERSION >= 53
-    HNncam hCam;  // device handle
-#else
-    HToupcam hCam;
-#endif
+    CAMSDK_HANDLE hCam;  // device handle
     gboolean raw;
     gboolean x16;
     gint esize;

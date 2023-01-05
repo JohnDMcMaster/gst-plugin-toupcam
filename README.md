@@ -147,3 +147,27 @@ Quick refernece for cameras that developers are testing:
     * 16 bit capture is partially supported
   * MU800
     * McMaster original camera
+
+# Version history
+
+0.0.0
+ * SDK: 46.17309.2020.0616
+ * Import from comissioned PoC
+
+0.1.0
+ * SDK: 46.17309.2020.0616
+ * Add more controls
+ * 16 bit PoC
+ * Instructions
+
+0.2.0
+ * SDK: 50.19728.20211022
+ * Documentation updates
+ * Newer SDK support
+
+0.3.0 (WIP)
+ * SDK: 53.21907.20221217, 50.19728.20211022
+ * Newer SDK support
+ * Some rebranded SDK support
+ * Add GST_TOUPCAMSRC_INFO
+

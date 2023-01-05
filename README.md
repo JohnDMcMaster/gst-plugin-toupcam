@@ -45,6 +45,7 @@ Install
 
     # on x86_64
     sudo cp linux/x64/libtoupcam.so /lib/x86_64-linux-gnu/
+    # sudo cp linux/x64/libnncam.so /lib/x86_64-linux-gnu/
     # on raspberry pi
     sudo cp linux/armhf/libtoupcam.so /lib/arm-linux-gnueabihf/
 
@@ -74,6 +75,14 @@ Install
 Tested versions:
   * toupcamsdk_46.16880.2020.0330
   * toupcamsdk_46.17309.2020.0616
+
+Branded SDK notes (Amcsope, Switcam, etc):
+  * NOTE: 95% of the time you just want to get the unbranded Touptek SDK (compatible with all branded cameras)
+  * But if not, carry on...
+  * Locations to edit are marked with "XXX: SDK_BRANDING"
+   * gsttoupcamsrc.h
+   * makefile.am
+  * If we were fancier we could probably add a --configure directive or similar
 
 See the INSTALL file for advanced setup.
 

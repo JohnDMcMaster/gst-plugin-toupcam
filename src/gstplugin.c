@@ -18,7 +18,6 @@ GST_DEBUG_CATEGORY_STATIC(GST_CAT_DEFAULT);
 
 static gboolean plugin_init(GstPlugin * plugin)
 {
-    printf("registering...\n");
     GST_DEBUG_CATEGORY_INIT(GST_CAT_DEFAULT, "toupcamsrc", 0,
                             "debug category for ToupCam elements");
 

@@ -660,20 +660,18 @@ void gst_toupcam_src_finalize(GObject * object)
     G_OBJECT_CLASS(gst_toupcam_src_parent_class)->finalize(object);
 }
 
-static void EventCallback(unsigned nEvent, void *pCallbackCtx)
+static void sdk_callback_PullMode(unsigned nEvent, void *pCallbackCtx)
 {
     GstToupCamSrc *src = GST_TOUPCAM_SRC(pCallbackCtx);
-    GST_DEBUG_OBJECT(src, "event callback: %d\n", nEvent);
+    //Note: lots of 1 => EVENT_EXPOSURE
+    GST_DEBUG_OBJECT(src, "sdk_callback_PullMode(nEvent=%d) begin, want %d", nEvent, CAMSDK_(EVENT_IMAGE));
     if (CAMSDK_(EVENT_IMAGE) == nEvent) {
         g_mutex_lock(&src->mutex);
         src->imagesAvailable++;
         g_cond_signal(&src->cond);
         g_mutex_unlock(&src->mutex);
-    } else {
-        GST_DEBUG_OBJECT(src, "event callback: %d\n", nEvent);
     }
-    GST_DEBUG("calllback %u (want %u), images now %u", nEvent,
-              CAMSDK_(EVENT_IMAGE), src->imagesAvailable);
+    GST_DEBUG_OBJECT(src, "sdk_callback_PullMode(nEvent=%d) end, images now %u", nEvent, src->imagesAvailable);
 }
 
 void gst_toupcam_pdebug(GstToupCamSrc * src)
@@ -826,7 +824,7 @@ static gboolean gst_toupcam_src_start(GstBaseSrc * bsrc)
     if (src->raw) {
         // can set raw8 and raw12, but not raw16
         // default raw8
-        GST_DEBUG_OBJECT(src, "setting up raw");
+        GST_DEBUG_OBJECT(src, "setup image mode: raw");
         if (1) {
             hr = camsdk_(put_Option) (src->hCam,
                                       CAMSDK_(OPTION_PIXEL_FORMAT),
@@ -861,7 +859,7 @@ static gboolean gst_toupcam_src_start(GstBaseSrc * bsrc)
     } else if (src->x16) {
         // can set raw8 and raw12, but not raw16
         // default raw8
-        GST_DEBUG_OBJECT(src, "setting up x16");
+        GST_DEBUG_OBJECT(src, "setup image mode: x16");
 
         // 16 bit output
         hr = camsdk_(put_Option) (src->hCam, CAMSDK_(OPTION_BITDEPTH), 1);
@@ -878,7 +876,7 @@ static gboolean gst_toupcam_src_start(GstBaseSrc * bsrc)
             goto fail;
         }
     } else {
-        GST_DEBUG_OBJECT(src, "setting up regular");
+        GST_DEBUG_OBJECT(src, "setup image mode: regular");
         camsdk_(put_Option) (src->hCam, CAMSDK_(OPTION_BYTEORDER),
                              GST_TOUPCAM_OPTION_BYTEORDER_RGB);
         camsdk_(put_Hue) (src->hCam, src->hue);
@@ -934,13 +932,14 @@ static gboolean gst_toupcam_src_start(GstBaseSrc * bsrc)
     // TODO: move from static buff to frame_buff
     src->frame_buff = NULL;
 
-    hr = camsdk_(StartPullModeWithCallback) (src->hCam, EventCallback,
+    hr = camsdk_(StartPullModeWithCallback) (src->hCam, sdk_callback_PullMode,
                                              src);
     if (FAILED(hr)) {
         GST_ERROR_OBJECT(src, "failed to start camera, hr = %08x", hr);
         goto fail;
     }
 
+    GST_DEBUG_OBJECT (src, "gst_toupcam_src_start(): ok");
     return TRUE;
 
   fail:
@@ -958,7 +957,7 @@ static gboolean gst_toupcam_src_stop(GstBaseSrc * bsrc)
 
     GstToupCamSrc *src = GST_TOUPCAM_SRC(bsrc);
 
-    GST_DEBUG_OBJECT(src, "stop");
+    GST_DEBUG_OBJECT(src, "gst_toupcam_src_stop()");
     camsdk_(Close) (src->hCam);
 
     gst_toupcam_src_reset(src);
@@ -1003,7 +1002,8 @@ static GstCaps *gst_toupcam_src_get_caps(GstBaseSrc * bsrc,
         caps = gst_video_info_to_caps(&vinfo);
     }
 
-    GST_INFO_OBJECT(src, "The caps are %" GST_PTR_FORMAT, caps);
+    //this func is called a lot and spams the output
+    //GST_INFO_OBJECT(src, "The caps are %" GST_PTR_FORMAT, caps);
 
     if (filter) {
         GstCaps *tmp = gst_caps_intersect(caps, filter);
@@ -1126,6 +1126,7 @@ void RGB48_to_ARGB64_x4(GstToupCamSrc * src, const unsigned char *bufin,
 
 static GstFlowReturn wait_new_frame(GstToupCamSrc * src)
 {
+    //printf("Waiting for new frame...\n");
     // Wait for the next image to be ready
     int timeout = 5;
     while (src->imagesAvailable <= src->imagesPulled) {
@@ -1155,7 +1156,13 @@ static GstFlowReturn wait_new_frame(GstToupCamSrc * src)
 static GstFlowReturn pull_decode_frame(GstToupCamSrc * src,
                                        GstBuffer * buf)
 {
-    static unsigned char raw_buff[5440 * 3648 * 4 * 2];
+    /*
+    Max size is RGBA 16 bit => 8 bytes per pixel
+    FIXME: size this dynamically
+    For now just make it really big
+    Largest supported camera is E3ISPM25000KPA @ 25MP
+    */
+    static unsigned char raw_buff[4928 * 4928 * 4 * 2];
     // Copy image to buffer in the right way
     GstMapInfo minfo;
 
@@ -1168,7 +1175,7 @@ static GstFlowReturn pull_decode_frame(GstToupCamSrc * src,
     // XXX: debugging crash
     if (minfo.size != src->image_bytes_out) {
         gst_buffer_unmap(buf, &minfo);
-        GST_DEBUG_OBJECT(src,
+        GST_ERROR_OBJECT(src,
                          "bad minfo size. Expect %d, got %" G_GSIZE_FORMAT,
                          src->image_bytes_out, minfo.size);
         return GST_FLOW_ERROR;
@@ -1183,7 +1190,7 @@ static GstFlowReturn pull_decode_frame(GstToupCamSrc * src,
 
         if (sizeof(raw_buff) < src->image_bytes_in) {
             gst_buffer_unmap(buf, &minfo);
-            GST_DEBUG_OBJECT(src,
+            GST_ERROR_OBJECT(src,
                              "insufficient frame buffer size. Need %d, got %d",
                              src->image_bytes_in, src->image_bytes_in);
             return GST_FLOW_ERROR;
@@ -1212,7 +1219,7 @@ static GstFlowReturn pull_decode_frame(GstToupCamSrc * src,
 #endif
     } else if (src->x16) {
         if (sizeof(raw_buff) < src->image_bytes_in) {
-            GST_DEBUG_OBJECT(src,
+            GST_ERROR_OBJECT(src,
                              "insufficient frame buffer size. Need %d, got %d",
                              src->image_bytes_in, src->image_bytes_in);
             return GST_FLOW_ERROR;
@@ -1281,6 +1288,8 @@ static GstFlowReturn gst_toupcam_src_fill(GstPushSrc * psrc,
 {
     GstToupCamSrc *src = GST_TOUPCAM_SRC(psrc);
 
+    GST_DEBUG_OBJECT(src, "gst_toupcam_src_fill()");
+
     // printf("Want %d buffers have %d\n", psrc->parent.num_buffers,
     // src->n_frames);
     // If we were asked for a specific number of buffers, stop when complete
@@ -1295,9 +1304,11 @@ static GstFlowReturn gst_toupcam_src_fill(GstPushSrc * psrc,
     GST_DEBUG_OBJECT(src, "waiting for new image");
 
     if (wait_new_frame(src) != GST_FLOW_OK) {
+        GST_ERROR_OBJECT(src, "Failed to get next frame");
         return GST_FLOW_ERROR;
     }
     if (pull_decode_frame(src, buf) != GST_FLOW_OK) {
+        GST_ERROR_OBJECT(src, "Failed to decode frame");
         return GST_FLOW_ERROR;
     }
 

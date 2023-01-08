@@ -180,7 +180,7 @@ Quick refernece for cameras that developers are testing:
  * Documentation updates
  * Newer SDK support
 
-0.3.0 (WIP)
+0.3.0
  * SDK: 53.21907.20221217, 50.19728.20211022
  * Newer SDK support
  * Some rebranded SDK support

@@ -770,14 +770,14 @@ static gboolean gst_toupcam_src_start(GstBaseSrc * bsrc)
     camsdk(DeviceV2) arr[CAMSDK_(MAX)];
 
     unsigned cnt = 0;
-    char at_id[65];
+    char at_id[128];
 
     // Start will open the device but not start it, set_caps starts it, stop
     // should stop and close it (as v4l2src)
 
     GstToupCamSrc *src = GST_TOUPCAM_SRC(bsrc);
 
-    GST_DEBUG_OBJECT(src, "start");
+    GST_DEBUG_OBJECT (src, "gst_toupcam_src_start(): begin");
 
     // Turn on automatic timestamping, if so we do not need to do it manually, BUT
     // there is some evidence that automatic timestamping is laggy
@@ -795,9 +795,9 @@ static gboolean gst_toupcam_src_start(GstBaseSrc * bsrc)
         goto fail;
     }
 
-    GST_DEBUG_OBJECT(src, "Toupcam_Open");
+    GST_DEBUG_OBJECT(src, "Toupcam_Open()");
     // open first usable device id preprended with "@"
-    snprintf(at_id, 65, "@%s", arr[0].id);
+    snprintf(at_id, sizeof(at_id), "@%s", arr[0].id);
     src->hCam = camsdk_(Open) (at_id);
     if (NULL == src->hCam) {
         GST_ERROR_OBJECT(src, "open failed");
@@ -1222,6 +1222,7 @@ static GstFlowReturn pull_decode_frame(GstToupCamSrc * src,
             GST_ERROR_OBJECT(src,
                              "insufficient frame buffer size. Need %d, got %d",
                              src->image_bytes_in, src->image_bytes_in);
+            gst_buffer_unmap(buf, &minfo);
             return GST_FLOW_ERROR;
         }
 

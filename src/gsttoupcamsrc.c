@@ -682,67 +682,68 @@ void gst_toupcam_pdebug(GstToupCamSrc * src)
     char buff[64];
 
     printf("Camera info\n");
-    printf("  max bit depth: %d\n", camsdk_(get_MaxBitDepth) (src->hCam));
-    printf("  max fan speed: %d\n", camsdk_(get_FanMaxSpeed) (src->hCam));
-    printf("  max frame speed: %d\n", camsdk_(get_MaxSpeed) (src->hCam));
-    printf("  mono mode: %d\n", camsdk_(get_MonoMode) (src->hCam));
+    printf("  MaxBitDepth(): %d\n", camsdk_(get_MaxBitDepth) (src->hCam));
+    printf("  FanMaxSpeed(): %d\n", camsdk_(get_FanMaxSpeed) (src->hCam));
+    //Max frame rate
+    printf("  MaxSpeed(): %d\n", camsdk_(get_MaxSpeed) (src->hCam));
+    printf("  MonoMode(): %d\n", camsdk_(get_MonoMode) (src->hCam));
     int resn = camsdk_(get_StillResolutionNumber) (src->hCam);
-    printf("  Still resolutions: %d\n", resn);
+    printf("  StillResolutionNumber(): %d\n", resn);
     if (resn < 0) {
         printf("    Failed :(\n");
     } else {
         for (int resi = 0; resi < resn; ++resi) {
-            printf("    esize %d\n", resi);
+            printf("    eSize=%d\n", resi);
             int width, height;
             if (!FAILED(camsdk_(get_StillResolution)
                         (src->hCam, resi, &width, &height))) {
-                printf("          %i x %i\n", width, height);
+                printf("          StillResolution(): %iw x %ih\n", width, height);
             }
             float pixx, pixy;
             if (!FAILED
                 (camsdk_(get_PixelSize) (src->hCam, resi, &pixx, &pixy))) {
-                printf("          %0.1f x %0.1f um\n", pixx, pixy);
+                printf("          PixelSize(): %0.1fw x %0.1fh um\n", pixx, pixy);
             }
         }
     }
 
     if (!FAILED(camsdk_(get_Negative) (src->hCam, &itmp))) {
-        printf("  negative: %d\n", itmp);
+        printf("  Negative(): %d\n", itmp);
     }
     if (!FAILED(camsdk_(get_Chrome) (src->hCam, &itmp))) {
-        printf("  chrome: %d\n", itmp);
+        printf("  Chrome(): %d\n", itmp);
     }
     if (!FAILED(camsdk_(get_HZ) (src->hCam, &itmp))) {
-        printf("  hz: %d\n", itmp);
+        printf("  HZ(): %d\n", itmp);
     }
     if (!FAILED(camsdk_(get_Mode) (src->hCam, &itmp))) {
-        printf("  mode: %d\n", itmp);
+        printf("  Mode(): %d\n", itmp);
     }
     if (!FAILED(camsdk_(get_RealTime) (src->hCam, &itmp))) {
-        printf("  real time: %d\n", itmp);
+        printf("  RealTime(): %d\n", itmp);
     }
 
     if (!FAILED(camsdk_(get_Temperature) (src->hCam, &stmp))) {
-        printf("  temperature: %d\n", stmp);
+        printf("  Temperature(): %d\n", stmp);
     }
     if (!FAILED(camsdk_(get_Revision) (src->hCam, &ustmp))) {
-        printf("  revision: %d\n", ustmp);
+        printf("  Revision(): %d\n", ustmp);
     }
 
     if (!FAILED(camsdk_(get_SerialNumber) (src->hCam, buff))) {
-        printf("  serial number: %s\n", buff);
+        printf("  SerialNumber(): %s\n", buff);
     }
     if (!FAILED(camsdk_(get_FwVersion) (src->hCam, buff))) {
-        printf("  fw version: %s\n", buff);
+        printf("  FwVersion(): %s\n", buff);
     }
     if (!FAILED(camsdk_(get_HwVersion) (src->hCam, buff))) {
-        printf("  hw version: %s\n", buff);
+        printf("  HwVersion(): %s\n", buff);
     }
     if (!FAILED(camsdk_(get_ProductionDate) (src->hCam, buff))) {
-        printf("  production date: %s\n", buff);
+        printf("  ProductionDate(): %s\n", buff);
     }
     if (!FAILED(camsdk_(get_FpgaVersion) (src->hCam, buff))) {
-        printf("  fpga version: %s\n", buff);
+        printf("  FpgaVersion(): %s\n", buff);
     }
     /*
        if (!FAILED(camsdk_(get_Name)(id, buff))) {
@@ -751,7 +752,7 @@ void gst_toupcam_pdebug(GstToupCamSrc * src)
      */
     // 0 => #define TOUPCAM_PIXELFORMAT_RAW8             0x00
     camsdk_(get_Option) (src->hCam, CAMSDK_(OPTION_PIXEL_FORMAT), &itmp);
-    printf("  pixel format: %i\n", itmp);
+    printf("  Option(PIXEL_FORMAT): %i\n", itmp);
 
     char nFourCC[4];
     unsigned bitsperpixel;
@@ -761,7 +762,7 @@ void gst_toupcam_pdebug(GstToupCamSrc * src)
     // needs this to get the full 12 bit
     // camsdk_(put_Option)(src->hCam, CAMSDK_(OPTION_PIXEL_FORMAT),
     // CAMSDK_(PIXELFORMAT_RAW12)); raw code GBRG, bpp 12
-    printf("  raw code %c%c%c%c, bpp %u\n", nFourCC[0], nFourCC[1],
+    printf("    RawFormat(): FourCC %c%c%c%c, BitsPerPixel %u\n", nFourCC[0], nFourCC[1],
            nFourCC[2], nFourCC[3], bitsperpixel);
 }
 

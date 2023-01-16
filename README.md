@@ -63,9 +63,11 @@ cd gst-plugin-toupcam
 make
 
 # Verify plugin is installed
-GST_DEBUG=0 GST_PLUGIN_PATH=$PWD/src/.libs/ gst-inspect-1.0 toupcamsrc
+GST_PLUGIN_PATH=$PWD/src/.libs/ gst-inspect-1.0 toupcamsrc
+# View camera debug info
+GST_PLUGIN_PATH=$PWD/src/.libs/ GST_TOUPCAMSRC_INFO=Y gst-launch-1.0 toupcamsrc num-buffers=0 ! fakesink
 # Display live feed
-GST_DEBUG=0 GST_PLUGIN_PATH=$PWD/src/.libs/ gst-launch-1.0 toupcamsrc ! videoconvert ! xvimagesink
+GST_PLUGIN_PATH=$PWD/src/.libs/ gst-launch-1.0 toupcamsrc ! videoconvert ! xvimagesink
 # Take a snapshot
 GST_PLUGIN_PATH=$PWD/src/.libs/ gst-launch-1.0 toupcamsrc ! videoconvert ! pngenc snapshot=true ! filesink location=/tmp/test.png
 # Stream to local video out (e.g. 2nd HDMI on raspberry pi 4)

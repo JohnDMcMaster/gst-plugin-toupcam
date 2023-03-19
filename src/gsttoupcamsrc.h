@@ -119,8 +119,8 @@ struct _GstToupCamSrc {
     int vflip;
     // bool
     int auto_exposure;
-    // unsigned
     unsigned expotime;
+    unsigned short expoagain;
     // ints
     int hue;
     int saturation;

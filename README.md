@@ -187,3 +187,7 @@ Quick refernece for cameras that developers are testing:
  * Newer SDK support
  * Some rebranded SDK support
  * Add GST_TOUPCAMSRC_INFO
+
+0.4.0
+ * GST_TOUPCAMSRC_INFO: tweak output format
+ * Add gain control

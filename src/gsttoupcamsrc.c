@@ -72,6 +72,7 @@ enum {
     PROP_VFLIP,
     PROP_AUTO_EXPOSURE,
     PROP_EXPOTIME,
+    PROP_EXPOAGAIN,
     PROP_HUE,
     PROP_SATURATION,
     PROP_BRIGHTNESS,
@@ -92,9 +93,16 @@ enum {
 
 #define DEFAULT_PROP_AUTO_EXPOSURE TRUE
 #define DEFAULT_PROP_EXPOTIME 0
+#define DEFAULT_PROP_EXPOAGAIN 100
 #define MIN_PROP_EXPOTIME 0
 // FIXME: GUI max is 15. However we will time out after 5 sec
 #define MAX_PROP_EXPOTIME 5000000
+/*
+Around roughly 10,000 it starts to break
+Not sure where the limit comes from
+*/
+#define MIN_PROP_EXPOAGAIN 100
+#define MAX_PROP_EXPOAGAIN 16000
 #define DEFAULT_PROP_HFLIP FALSE
 #define DEFAULT_PROP_VFLIP FALSE
 #define DEFAULT_PROP_HUE CAMSDK_(HUE_DEF)
@@ -211,6 +219,14 @@ static void gst_toupcam_src_class_init(GstToupCamSrcClass * klass)
                                                      DEFAULT_PROP_EXPOTIME,
                                                      G_PARAM_READABLE |
                                                      G_PARAM_WRITABLE));
+    g_object_class_install_property(gobject_class, PROP_EXPOAGAIN,
+                                    g_param_spec_int("expoagain",
+                                                     "ExpoAGain as percentage", "...",
+                                                     MIN_PROP_EXPOAGAIN,
+                                                     MAX_PROP_EXPOAGAIN,
+                                                     DEFAULT_PROP_EXPOAGAIN,
+                                                     G_PARAM_READABLE |
+                                                     G_PARAM_WRITABLE));
 
     g_object_class_install_property(gobject_class, PROP_HUE,
                                     g_param_spec_int("hue", "...", "...",
@@ -318,6 +334,7 @@ static void gst_toupcam_src_init(GstToupCamSrc * src)
     src->x16 = x16;
     src->auto_exposure = DEFAULT_PROP_AUTO_EXPOSURE;
     src->expotime = DEFAULT_PROP_EXPOTIME;
+    src->expoagain = DEFAULT_PROP_EXPOAGAIN;
     src->vflip = DEFAULT_PROP_VFLIP;
     src->hflip = DEFAULT_PROP_HFLIP;
     src->hue = DEFAULT_PROP_HUE;
@@ -407,6 +424,12 @@ void gst_toupcam_src_set_property(GObject * object, guint property_id,
         src->expotime = g_value_get_int(value);
         if (src->hCam) {
             camsdk_(put_ExpoTime) (src->hCam, src->expotime);
+        }
+        break;
+    case PROP_EXPOAGAIN:
+        src->expoagain = g_value_get_int(value);
+        if (src->hCam) {
+            camsdk_(put_ExpoAGain) (src->hCam, src->expoagain);
         }
         break;
     case PROP_HUE:
@@ -561,7 +584,12 @@ void gst_toupcam_src_get_property(GObject * object, guint property_id,
         }
         g_value_set_int(value, src->expotime);
         break;
-
+    case PROP_EXPOAGAIN:
+        if (src->hCam) {
+            camsdk_(get_ExpoAGain) (src->hCam, &src->expoagain);
+        }
+        g_value_set_int(value, src->expoagain);
+        break;
     case PROP_HUE:
         if (src->hCam) {
             camsdk_(get_Hue) (src->hCam, &src->hue);
@@ -704,6 +732,19 @@ void gst_toupcam_pdebug(GstToupCamSrc * src)
                 (camsdk_(get_PixelSize) (src->hCam, resi, &pixx, &pixy))) {
                 printf("          PixelSize(): %0.1fw x %0.1fh um\n", pixx, pixy);
             }
+        }
+    }
+
+    {
+        unsigned nMin, nMax, nDef;
+        if (!FAILED(camsdk_(get_ExpTimeRange) (src->hCam, &nMin, &nMax, &nDef))) {
+            printf("  ExpTimeRange(): min %d, max %d, def %d\n", nMin, nMax, nDef);
+        }
+    }
+    {
+        unsigned short nMin, nMax, nDef;
+        if (!FAILED(camsdk_(get_ExpoAGainRange) (src->hCam, &nMin, &nMax, &nDef))) {
+            printf("  ExpoAGainRange(): min %d, max %d, def %d\n", nMin, nMax, nDef);
         }
     }
 
@@ -940,12 +981,13 @@ static gboolean gst_toupcam_src_start(GstBaseSrc * bsrc)
         goto fail;
     }
 
+
     GST_DEBUG_OBJECT (src, "gst_toupcam_src_start(): ok");
     return TRUE;
 
   fail:
     if (src->hCam) {
-        src->hCam = 0;
+        src->hCam = NULL;
     }
 
     return FALSE;

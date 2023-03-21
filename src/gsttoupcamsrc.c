@@ -786,6 +786,8 @@ void gst_toupcam_pdebug(GstToupCamSrc * src)
         printf("  FpgaVersion(): %s\n", buff);
     }
 
+//Not supported in version 50
+#if CAMSDK_VERSION >= 53
     const camsdk(ModelV2) *model = camsdk_(query_Model) (src->hCam);
     if (model) {
         printf("  ToupcamModelV2():\n");
@@ -795,6 +797,7 @@ void gst_toupcam_pdebug(GstToupCamSrc * src)
         printf("    preview: %u\n", model->preview);
         printf("    still: %u\n", model->still);
     }
+#endif
 
     /*
        if (!FAILED(camsdk_(get_Name)(id, buff))) {

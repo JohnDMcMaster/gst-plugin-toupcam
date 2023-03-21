@@ -377,16 +377,14 @@ static void gst_toupcam_src_reset(GstToupCamSrc * src)
 static void my_rgb_cb(const int aGain[3], void *pCtx)
 {
     GstToupCamSrc *src = (GstToupCamSrc *) pCtx;
-    ;
-    printf("gain %u %u %u\n", aGain[0], aGain[1], aGain[2]);
+    //printf("gain %u %u %u\n", aGain[0], aGain[1], aGain[2]);
     src->awb_rgb = 0;
 }
 
 static void my_tt_cb(const int nTemp, const int nTint, void *pCtx)
 {
     GstToupCamSrc *src = (GstToupCamSrc *) pCtx;
-    ;
-    printf("awb cb %d %d %p\n", nTemp, nTint, pCtx);
+    //printf("awb cb %d %d %p\n", nTemp, nTint, pCtx);
     src->awb_tt = 0;
 }
 

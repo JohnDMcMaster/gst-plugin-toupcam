@@ -49,22 +49,26 @@ release
 #define camsdk_(x) Toupcam_##x
 #define CAMSDK_(x) TOUPCAM_##x
 #define CAMSDK_HANDLE HToupcam
+#define CAMDSK_BRAND "topucam"
 #elif defined(CAMSDK_AMCAM)
 #include <amcam.h>
 #define camsdk(x) Amcam##x
 #define camsdk_(x) Amcam_##x
 #define CAMSDK_(x) AMCAM_##x
+#define CAMDSK_BRAND "amcam"
 #elif defined(CAMSDK_NNCAM)
 #include <nncam.h>
 #define camsdk(x) Nncam##x
 #define camsdk_(x) Nncam_##x
 #define CAMSDK_(x) NNCAM_##x
 #define CAMSDK_HANDLE HNncam
+#define CAMDSK_BRAND "nncam"
 #elif defined(CAMSDK_SWIFTCAM)
 #include <swiftcam.h>
 #define camsdk(x) Swiftcam##x
 #define camsdk_(x) Swiftcam_##x
 #define CAMSDK_(x) SWIFTCAM_##x
+#define CAMDSK_BRAND "swiftcam"
 #else
 #error Need SDK brand
 #endif

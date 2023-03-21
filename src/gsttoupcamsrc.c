@@ -707,7 +707,8 @@ void gst_toupcam_pdebug(GstToupCamSrc * src)
     unsigned short ustmp;
     char buff[64];
 
-    printf("Camera info\n");
+    printf("toupcam debug info for Version(): %s\n", camsdk_(Version) ());
+    printf("  SDK_Brand: " CAMDSK_BRAND "\n");
     printf("  MaxBitDepth(): %d\n", camsdk_(get_MaxBitDepth) (src->hCam));
     printf("  FanMaxSpeed(): %d\n", camsdk_(get_FanMaxSpeed) (src->hCam));
     //Max frame rate
@@ -784,6 +785,17 @@ void gst_toupcam_pdebug(GstToupCamSrc * src)
     if (!FAILED(camsdk_(get_FpgaVersion) (src->hCam, buff))) {
         printf("  FpgaVersion(): %s\n", buff);
     }
+
+    const camsdk(ModelV2) *model = camsdk_(query_Model) (src->hCam);
+    if (model) {
+        printf("  ToupcamModelV2():\n");
+        printf("    name: %s\n", model->name);
+        printf("    flag: 0x%08llX\n", model->flag);
+        printf("    maxspeed: %u\n", model->maxspeed);
+        printf("    preview: %u\n", model->preview);
+        printf("    still: %u\n", model->still);
+    }
+
     /*
        if (!FAILED(camsdk_(get_Name)(id, buff))) {
        printf("  name: %s\n", buff);

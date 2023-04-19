@@ -137,7 +137,6 @@ struct _GstToupCamSrc {
     int awb_tt;
 
     // stream
-    gboolean acq_started;
     gint n_frames;
     gint total_timeouts;
     GstClockTime duration;

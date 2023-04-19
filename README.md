@@ -191,3 +191,6 @@ Quick refernece for cameras that developers are testing:
 0.4.0
  * GST_TOUPCAMSRC_INFO: tweak output format
  * Add gain control
+
+0.5.0
+ * Significant properties added (in lieu of expanding GST_TOUPCAMSRC_INFO hacks)

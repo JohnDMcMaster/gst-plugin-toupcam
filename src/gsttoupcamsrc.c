@@ -66,6 +66,42 @@ void gst_toupcam_pdebug(GstToupCamSrc * src);
 static void gst_toupcam_src_reset(GstToupCamSrc * src);
 enum {
     PROP_0,
+
+    //Camera agnostic properties
+    PROP_SDK_BRAND,
+    PROP_SDK_VERSION,
+
+    //Fixed camera metadata
+    PROP_SERIAL_NUMBER,
+    PROP_FW_VERSION,
+    PROP_HW_VERSION,
+    PROP_PRODUCTION_DATE,
+    PROP_FPGA_VERSION,
+
+#if CAMSDK_VERSION >= 53
+    //ToupcamModelV2
+    PROP_MODEL_NAME,
+    PROP_MODEL_FLAG,
+    PROP_MODEL_MAXSPEED,
+    PROP_MODEL_PREVIEW,
+    PROP_MODEL_STILL,
+    PROP_MODEL_MAXFANSPEED,
+    PROP_MODEL_XPIXSZ,
+    PROP_MODEL_YPIXSZ,
+#endif
+
+    PROP_REVISION,
+    PROP_MAX_BIT_DEPTH,
+    //Exposure time in us
+    PROP_EXPOSURE_TIME_MIN,
+    PROP_EXPOSURE_TIME_MAX,
+    PROP_EXPOSURE_TIME_DEFAULT,
+    //Gain as whole number precent
+    //ex: 100 => 1.0x, 500 => 5.0x
+    PROP_EXPOSURE_AGAIN_MIN,
+    PROP_EXPOSURE_AGAIN_MAX,
+    PROP_EXPOSURE_AGAIN_DEFAULT,
+
     PROP_CAMERAPRESENT,
     PROP_ESIZE,
     PROP_HFLIP,
@@ -89,6 +125,8 @@ enum {
 
     PROP_AWB_RGB,
     PROP_AWB_TT,
+
+
 };
 
 #define DEFAULT_PROP_AUTO_EXPOSURE TRUE
@@ -132,51 +170,125 @@ GST_STATIC_PAD_TEMPLATE("src", GST_PAD_SRC, GST_PAD_ALWAYS,
 
 G_DEFINE_TYPE(GstToupCamSrc, gst_toupcam_src, GST_TYPE_PUSH_SRC);
 
-static void gst_toupcam_src_class_init(GstToupCamSrcClass * klass)
+static void install_properties(GObjectClass *gobject_class)
 {
-    GObjectClass *gobject_class = G_OBJECT_CLASS(klass);
-    GstElementClass *gstelement_class = GST_ELEMENT_CLASS(klass);
-    GstBaseSrcClass *gstbasesrc_class = GST_BASE_SRC_CLASS(klass);
-    GstPushSrcClass *gstpushsrc_class = GST_PUSH_SRC_CLASS(klass);
+    g_object_class_install_property(gobject_class, PROP_SDK_BRAND,
+                                    g_param_spec_string("sdk-brand", NULL,
+                                                        NULL, NULL,
+                                                        G_PARAM_READABLE));
+    g_object_class_install_property(gobject_class, PROP_SDK_VERSION,
+                                    g_param_spec_string("sdk-version",
+                                                        NULL, NULL, NULL,
+                                                        G_PARAM_READABLE));
 
-    GST_DEBUG_CATEGORY_INIT(GST_CAT_DEFAULT, "toupcamsrc", 0,
-                            "ToupCam Camera source");
+    g_object_class_install_property(gobject_class, PROP_SERIAL_NUMBER,
+                                    g_param_spec_string("serial-number",
+                                                        NULL, NULL, NULL,
+                                                        G_PARAM_READABLE));
+    g_object_class_install_property(gobject_class, PROP_FW_VERSION,
+                                    g_param_spec_string("fw-version", NULL,
+                                                        NULL, NULL,
+                                                        G_PARAM_READABLE));
+    g_object_class_install_property(gobject_class, PROP_HW_VERSION,
+                                    g_param_spec_string("hw-version", NULL,
+                                                        NULL, NULL,
+                                                        G_PARAM_READABLE));
+    g_object_class_install_property(gobject_class, PROP_PRODUCTION_DATE,
+                                    g_param_spec_string("production-date",
+                                                        NULL, NULL, NULL,
+                                                        G_PARAM_READABLE));
+    g_object_class_install_property(gobject_class, PROP_FPGA_VERSION,
+                                    g_param_spec_string("fpga-version",
+                                                        NULL, NULL, NULL,
+                                                        G_PARAM_READABLE));
 
-    gobject_class->set_property = gst_toupcam_src_set_property;
-    gobject_class->get_property = gst_toupcam_src_get_property;
-    gobject_class->dispose = gst_toupcam_src_dispose;
-    gobject_class->finalize = gst_toupcam_src_finalize;
+#if CAMSDK_VERSION >= 53
+    g_object_class_install_property(gobject_class, PROP_MODEL_NAME,
+                                    g_param_spec_string("model-name", NULL,
+                                                        NULL, NULL,
+                                                        G_PARAM_READABLE));
+    g_object_class_install_property(gobject_class, PROP_MODEL_FLAG,
+                                    g_param_spec_uint64("model-flag", NULL,
+                                                        NULL, 0,
+                                                        0xFFFFFFFFFFFFFFFFLL,
+                                                        0,
+                                                        G_PARAM_READABLE));
+    g_object_class_install_property(gobject_class, PROP_MODEL_MAXSPEED,
+                                    g_param_spec_uint("model-maxspeed",
+                                                      NULL, NULL, 0,
+                                                      16777215, 0,
+                                                      G_PARAM_READABLE));
+    g_object_class_install_property(gobject_class, PROP_MODEL_PREVIEW,
+                                    g_param_spec_uint("model-preview",
+                                                      NULL, NULL, 0,
+                                                      16777215, 0,
+                                                      G_PARAM_READABLE));
+    g_object_class_install_property(gobject_class, PROP_MODEL_STILL,
+                                    g_param_spec_uint("model-still", NULL,
+                                                      NULL, 0, 16777215, 0,
+                                                      G_PARAM_READABLE));
+    g_object_class_install_property(gobject_class, PROP_MODEL_MAXFANSPEED,
+                                    g_param_spec_uint("model-maxfanspeed",
+                                                      NULL, NULL, 0,
+                                                      16777215, 0,
+                                                      G_PARAM_READABLE));
+    g_object_class_install_property(gobject_class, PROP_MODEL_XPIXSZ,
+                                    g_param_spec_float("model-xpixsz",
+                                                       NULL, NULL, 0,
+                                                       16777215, 0,
+                                                       G_PARAM_READABLE));
+    g_object_class_install_property(gobject_class, PROP_MODEL_YPIXSZ,
+                                    g_param_spec_float("model-ypixsz",
+                                                       NULL, NULL, 0,
+                                                       16777215, 0,
+                                                       G_PARAM_READABLE));
+#endif
 
-    if (raw || x16) {
-        GST_DEBUG("select x16 template");
-        gst_element_class_add_pad_template(gstelement_class,
-                                           gst_static_pad_template_get
-                                           (&gst_toupcam_src_template_x16));
-    } else {
-        gst_element_class_add_pad_template(gstelement_class,
-                                           gst_static_pad_template_get
-                                           (&gst_toupcam_src_template_x8));
-    }
+    g_object_class_install_property(gobject_class, PROP_REVISION,
+                                    g_param_spec_int("revision", NULL,
+                                                     NULL, 0, 16777215, 0,
+                                                     G_PARAM_READABLE));
 
-    gst_element_class_set_static_metadata(gstelement_class,
-                                          "ToupCam Video Source",
-                                          "Source/Video",
-                                          "ToupCam Camera video source",
-                                          "John McMaster <johndmcmaster@gmail.com>");
+    g_object_class_install_property(gobject_class, PROP_MAX_BIT_DEPTH,
+                                    g_param_spec_int("max-bit-depth", NULL,
+                                                     NULL, 0, 16, 0,
+                                                     G_PARAM_READABLE));
 
-    gstbasesrc_class->start = GST_DEBUG_FUNCPTR(gst_toupcam_src_start);
-    gstbasesrc_class->stop = GST_DEBUG_FUNCPTR(gst_toupcam_src_stop);
-    gstbasesrc_class->get_caps =
-        GST_DEBUG_FUNCPTR(gst_toupcam_src_get_caps);
-    gstbasesrc_class->set_caps =
-        GST_DEBUG_FUNCPTR(gst_toupcam_src_set_caps);
 
-    gstpushsrc_class->alloc = GST_DEBUG_FUNCPTR(gst_toupcam_src_alloc);
-    gstpushsrc_class->fill = GST_DEBUG_FUNCPTR(gst_toupcam_src_fill);
-    GST_DEBUG("Using gst_toupcam_src_fill");
+    g_object_class_install_property(gobject_class, PROP_EXPOSURE_TIME_MIN,
+                                    g_param_spec_int("exposure-time-min",
+                                                     NULL, NULL, 0,
+                                                     16777215, 0,
+                                                     G_PARAM_READABLE));
+    g_object_class_install_property(gobject_class, PROP_EXPOSURE_TIME_MAX,
+                                    g_param_spec_int("exposure-time-max",
+                                                     NULL, NULL, 0,
+                                                     16777215, 0,
+                                                     G_PARAM_READABLE));
+    g_object_class_install_property(gobject_class,
+                                    PROP_EXPOSURE_TIME_DEFAULT,
+                                    g_param_spec_int
+                                    ("exposure-time-default", NULL, NULL,
+                                     0, 16777215, 0, G_PARAM_READABLE));
 
-    // Install GObject properties
-    // Camera Present property
+    g_object_class_install_property(gobject_class, PROP_EXPOSURE_AGAIN_MIN,
+                                    g_param_spec_int("exposure-again-min",
+                                                     NULL, NULL, 0,
+                                                     16777215, 0,
+                                                     G_PARAM_READABLE));
+    g_object_class_install_property(gobject_class, PROP_EXPOSURE_AGAIN_MAX,
+                                    g_param_spec_int("exposure-again-max",
+                                                     NULL, NULL, 0,
+                                                     16777215, 0,
+                                                     G_PARAM_READABLE));
+    g_object_class_install_property(gobject_class,
+                                    PROP_EXPOSURE_AGAIN_DEFAULT,
+                                    g_param_spec_int
+                                    ("exposure-again-default", NULL, NULL,
+                                     0, 16777215, 0, G_PARAM_READABLE));
+
+
+
     g_object_class_install_property(gobject_class, PROP_CAMERAPRESENT,
                                     g_param_spec_boolean("devicepresent",
                                                          "Camera Device Present",
@@ -205,7 +317,7 @@ static void gst_toupcam_src_class_init(GstToupCamSrcClass * klass)
                                                          G_PARAM_READABLE |
                                                          G_PARAM_WRITABLE));
     g_object_class_install_property(gobject_class, PROP_AUTO_EXPOSURE,
-                                    g_param_spec_boolean("auto_exposure",
+                                    g_param_spec_boolean("auto-exposure",
                                                          "Auto exposure",
                                                          "Auto exposure",
                                                          DEFAULT_PROP_AUTO_EXPOSURE,
@@ -221,7 +333,8 @@ static void gst_toupcam_src_class_init(GstToupCamSrcClass * klass)
                                                      G_PARAM_WRITABLE));
     g_object_class_install_property(gobject_class, PROP_EXPOAGAIN,
                                     g_param_spec_int("expoagain",
-                                                     "ExpoAGain as percentage", "...",
+                                                     "ExpoAGain as percentage",
+                                                     "...",
                                                      MIN_PROP_EXPOAGAIN,
                                                      MAX_PROP_EXPOAGAIN,
                                                      DEFAULT_PROP_EXPOAGAIN,
@@ -278,54 +391,98 @@ static void gst_toupcam_src_class_init(GstToupCamSrcClass * klass)
        ie setting to 255/255/255 turns image black
      */
     g_object_class_install_property(gobject_class, PROP_BB_R,
-                                    g_param_spec_int("bb_r", "...", "...",
+                                    g_param_spec_int("bb-r", "...", "...",
                                                      0, 255, 0,
                                                      G_PARAM_READABLE |
                                                      G_PARAM_WRITABLE));
     g_object_class_install_property(gobject_class, PROP_BB_G,
-                                    g_param_spec_int("bb_g", "...", "...",
+                                    g_param_spec_int("bb-g", "...", "...",
                                                      0, 255, 0,
                                                      G_PARAM_READABLE |
                                                      G_PARAM_WRITABLE));
     g_object_class_install_property(gobject_class, PROP_BB_B,
-                                    g_param_spec_int("bb_b", "...", "...",
+                                    g_param_spec_int("bb-b", "...", "...",
                                                      0, 255, 0,
                                                      G_PARAM_READABLE |
                                                      G_PARAM_WRITABLE));
 
     g_object_class_install_property(gobject_class, PROP_WB_R,
-                                    g_param_spec_int("wb_r", "...", "...",
+                                    g_param_spec_int("wb-r", "...", "...",
                                                      -255, 255, 0,
                                                      G_PARAM_READABLE |
                                                      G_PARAM_WRITABLE));
     g_object_class_install_property(gobject_class, PROP_WB_G,
-                                    g_param_spec_int("wb_g", "...", "...",
+                                    g_param_spec_int("wb-g", "...", "...",
                                                      -255, 255, 0,
                                                      G_PARAM_READABLE |
                                                      G_PARAM_WRITABLE));
     g_object_class_install_property(gobject_class, PROP_WB_B,
-                                    g_param_spec_int("wb_b", "...", "...",
+                                    g_param_spec_int("wb-b", "...", "...",
                                                      -255, 255, 0,
                                                      G_PARAM_READABLE |
                                                      G_PARAM_WRITABLE));
 
     g_object_class_install_property(gobject_class, PROP_AWB_RGB,
-                                    g_param_spec_boolean("awb_rgb",
+                                    g_param_spec_boolean("awb-rgb",
                                                          "Trigger AWB",
                                                          "Requests a single red/green/blue AWB and clears when complete",
                                                          0,
                                                          G_PARAM_READABLE |
                                                          G_PARAM_WRITABLE));
     g_object_class_install_property(gobject_class, PROP_AWB_TT,
-                                    g_param_spec_boolean("awb_tt",
+                                    g_param_spec_boolean("awb-tt",
                                                          "Trigger AWB",
                                                          "Requests a single temp/tint AWB and clears when complete",
                                                          0,
                                                          G_PARAM_READABLE |
                                                          G_PARAM_WRITABLE));
+}
+
+static void gst_toupcam_src_class_init(GstToupCamSrcClass * klass)
+{
+    GObjectClass *gobject_class = G_OBJECT_CLASS(klass);
+    GstElementClass *gstelement_class = GST_ELEMENT_CLASS(klass);
+    GstBaseSrcClass *gstbasesrc_class = GST_BASE_SRC_CLASS(klass);
+    GstPushSrcClass *gstpushsrc_class = GST_PUSH_SRC_CLASS(klass);
+
+    GST_DEBUG_CATEGORY_INIT(GST_CAT_DEFAULT, "toupcamsrc", 0,
+                            "ToupCam Camera source");
+
+    gobject_class->set_property = gst_toupcam_src_set_property;
+    gobject_class->get_property = gst_toupcam_src_get_property;
+    gobject_class->dispose = gst_toupcam_src_dispose;
+    gobject_class->finalize = gst_toupcam_src_finalize;
+
+    if (raw || x16) {
+        GST_DEBUG("select x16 template");
+        gst_element_class_add_pad_template(gstelement_class,
+                                           gst_static_pad_template_get
+                                           (&gst_toupcam_src_template_x16));
+    } else {
+        gst_element_class_add_pad_template(gstelement_class,
+                                           gst_static_pad_template_get
+                                           (&gst_toupcam_src_template_x8));
+    }
+
+    gst_element_class_set_static_metadata(gstelement_class,
+                                          "ToupCam Video Source",
+                                          "Source/Video",
+                                          "ToupCam Camera video source",
+                                          "John McMaster <johndmcmaster@gmail.com>");
+
+    gstbasesrc_class->start = GST_DEBUG_FUNCPTR(gst_toupcam_src_start);
+    gstbasesrc_class->stop = GST_DEBUG_FUNCPTR(gst_toupcam_src_stop);
+    gstbasesrc_class->get_caps =
+        GST_DEBUG_FUNCPTR(gst_toupcam_src_get_caps);
+    gstbasesrc_class->set_caps =
+        GST_DEBUG_FUNCPTR(gst_toupcam_src_set_caps);
+
+    gstpushsrc_class->alloc = GST_DEBUG_FUNCPTR(gst_toupcam_src_alloc);
+    gstpushsrc_class->fill = GST_DEBUG_FUNCPTR(gst_toupcam_src_fill);
+    GST_DEBUG("Using gst_toupcam_src_fill");
 
 
-
+    install_properties(gobject_class);
 }
 
 static void gst_toupcam_src_init(GstToupCamSrc * src)
@@ -547,11 +704,181 @@ void gst_toupcam_src_get_property(GObject * object, guint property_id,
                                   GValue * value, GParamSpec * pspec)
 {
     GstToupCamSrc *src;
+    char buff[64] = "";
+    int tempi = 0;
 
     g_return_if_fail(GST_IS_TOUPCAM_SRC(object));
     src = GST_TOUPCAM_SRC(object);
 
     switch (property_id) {
+    case PROP_SDK_BRAND:
+        g_value_set_string(value, CAMDSK_BRAND);
+        break;
+    case PROP_SDK_VERSION:
+        g_value_set_string(value, camsdk_(Version) ());
+        break;
+
+    case PROP_SERIAL_NUMBER:
+        if (src->hCam) {
+            camsdk_(get_SerialNumber) (src->hCam, buff);
+        }
+        g_value_set_string(value, buff);
+        break;
+    case PROP_FW_VERSION:
+        if (src->hCam) {
+            camsdk_(get_FwVersion) (src->hCam, buff);
+        }
+        g_value_set_string(value, buff);
+        break;
+    case PROP_HW_VERSION:
+        if (src->hCam) {
+            camsdk_(get_HwVersion) (src->hCam, buff);
+        }
+        g_value_set_string(value, buff);
+        break;
+    case PROP_PRODUCTION_DATE:
+        if (src->hCam) {
+            camsdk_(get_ProductionDate) (src->hCam, buff);
+        }
+        g_value_set_string(value, buff);
+        break;
+    case PROP_FPGA_VERSION:
+        if (src->hCam) {
+            camsdk_(get_FpgaVersion) (src->hCam, buff);
+        }
+        g_value_set_string(value, buff);
+        break;
+
+#if CAMSDK_VERSION >= 53
+    case PROP_MODEL_NAME:
+    case PROP_MODEL_FLAG:
+    case PROP_MODEL_MAXSPEED:
+    case PROP_MODEL_PREVIEW:
+    case PROP_MODEL_STILL:
+    case PROP_MODEL_MAXFANSPEED:
+    case PROP_MODEL_XPIXSZ:
+    case PROP_MODEL_YPIXSZ:
+        if (src->hCam) {
+            //maybe just move to struct?
+            const camsdk(ModelV2) * model =
+                camsdk_(query_Model) (src->hCam);
+            if (model) {
+                switch (property_id) {
+                case PROP_MODEL_NAME:
+                    g_value_set_string(value, model->name);
+                    break;
+                case PROP_MODEL_FLAG:
+                    g_value_set_uint64(value, model->flag);
+                    break;
+                case PROP_MODEL_MAXSPEED:
+                    g_value_set_uint(value, model->maxspeed);
+                    break;
+                case PROP_MODEL_PREVIEW:
+                    g_value_set_uint(value, model->preview);
+                    break;
+                case PROP_MODEL_STILL:
+                    g_value_set_uint(value, model->still);
+                    break;
+                case PROP_MODEL_MAXFANSPEED:
+                    g_value_set_uint(value, model->maxfanspeed);
+                    break;
+                case PROP_MODEL_XPIXSZ:
+                    g_value_set_float(value, model->xpixsz);
+                    break;
+                case PROP_MODEL_YPIXSZ:
+                    g_value_set_float(value, model->ypixsz);
+                    break;
+                }
+            }
+        }
+        break;
+#endif
+
+    case PROP_REVISION:
+        if (src->hCam) {
+            unsigned short ustmp;
+            if (!FAILED(camsdk_(get_Revision) (src->hCam, &ustmp))) {
+                tempi = ustmp;
+            }
+        }
+        g_value_set_int(value, tempi);
+        break;
+
+    case PROP_MAX_BIT_DEPTH:
+        if (src->hCam) {
+            tempi = camsdk_(get_MaxBitDepth) (src->hCam);
+        }
+        g_value_set_int(value, tempi);
+        break;
+
+    case PROP_EXPOSURE_TIME_MIN:
+        if (src->hCam) {
+            unsigned nMin, nMax, nDef;
+            if (!FAILED
+                (camsdk_(get_ExpTimeRange)
+                 (src->hCam, &nMin, &nMax, &nDef))) {
+                tempi = nMin;
+            }
+        }
+        g_value_set_int(value, tempi);
+        break;
+    case PROP_EXPOSURE_TIME_MAX:
+        if (src->hCam) {
+            unsigned nMin, nMax, nDef;
+            if (!FAILED
+                (camsdk_(get_ExpTimeRange)
+                 (src->hCam, &nMin, &nMax, &nDef))) {
+                tempi = nMax;
+            }
+        }
+        g_value_set_int(value, tempi);
+        break;
+    case PROP_EXPOSURE_TIME_DEFAULT:
+        if (src->hCam) {
+            unsigned nMin, nMax, nDef;
+            if (!FAILED
+                (camsdk_(get_ExpTimeRange)
+                 (src->hCam, &nMin, &nMax, &nDef))) {
+                tempi = nDef;
+            }
+        }
+        g_value_set_int(value, tempi);
+        break;
+
+    case PROP_EXPOSURE_AGAIN_MIN:
+        if (src->hCam) {
+            unsigned short nMin, nMax, nDef;
+            if (!FAILED
+                (camsdk_(get_ExpoAGainRange)
+                 (src->hCam, &nMin, &nMax, &nDef))) {
+                tempi = nMin;
+            }
+        }
+        g_value_set_int(value, tempi);
+        break;
+    case PROP_EXPOSURE_AGAIN_MAX:
+        if (src->hCam) {
+            unsigned short nMin, nMax, nDef;
+            if (!FAILED
+                (camsdk_(get_ExpoAGainRange)
+                 (src->hCam, &nMin, &nMax, &nDef))) {
+                tempi = nMax;
+            }
+        }
+        g_value_set_int(value, tempi);
+        break;
+    case PROP_EXPOSURE_AGAIN_DEFAULT:
+        if (src->hCam) {
+            unsigned short nMin, nMax, nDef;
+            if (!FAILED
+                (camsdk_(get_ExpoAGainRange)
+                 (src->hCam, &nMin, &nMax, &nDef))) {
+                tempi = nDef;
+            }
+        }
+        g_value_set_int(value, tempi);
+        break;
+
     case PROP_CAMERAPRESENT:
         g_value_set_boolean(value, src->hCam != NULL ? TRUE : FALSE);
         break;
@@ -690,14 +1017,18 @@ static void sdk_callback_PullMode(unsigned nEvent, void *pCallbackCtx)
 {
     GstToupCamSrc *src = GST_TOUPCAM_SRC(pCallbackCtx);
     //Note: lots of 1 => EVENT_EXPOSURE
-    GST_DEBUG_OBJECT(src, "sdk_callback_PullMode(nEvent=%d) begin, want %d", nEvent, CAMSDK_(EVENT_IMAGE));
+    GST_DEBUG_OBJECT(src,
+                     "sdk_callback_PullMode(nEvent=%d) begin, want %d",
+                     nEvent, CAMSDK_(EVENT_IMAGE));
     if (CAMSDK_(EVENT_IMAGE) == nEvent) {
         g_mutex_lock(&src->mutex);
         src->imagesAvailable++;
         g_cond_signal(&src->cond);
         g_mutex_unlock(&src->mutex);
     }
-    GST_DEBUG_OBJECT(src, "sdk_callback_PullMode(nEvent=%d) end, images now %u", nEvent, src->imagesAvailable);
+    GST_DEBUG_OBJECT(src,
+                     "sdk_callback_PullMode(nEvent=%d) end, images now %u",
+                     nEvent, src->imagesAvailable);
 }
 
 void gst_toupcam_pdebug(GstToupCamSrc * src)
@@ -724,26 +1055,33 @@ void gst_toupcam_pdebug(GstToupCamSrc * src)
             int width, height;
             if (!FAILED(camsdk_(get_StillResolution)
                         (src->hCam, resi, &width, &height))) {
-                printf("          StillResolution(): %iw x %ih\n", width, height);
+                printf("          StillResolution(): %iw x %ih\n", width,
+                       height);
             }
             float pixx, pixy;
             if (!FAILED
                 (camsdk_(get_PixelSize) (src->hCam, resi, &pixx, &pixy))) {
-                printf("          PixelSize(): %0.1fw x %0.1fh um\n", pixx, pixy);
+                printf("          PixelSize(): %0.1fw x %0.1fh um\n", pixx,
+                       pixy);
             }
         }
     }
 
     {
         unsigned nMin, nMax, nDef;
-        if (!FAILED(camsdk_(get_ExpTimeRange) (src->hCam, &nMin, &nMax, &nDef))) {
-            printf("  ExpTimeRange(): min %d, max %d, def %d\n", nMin, nMax, nDef);
+        if (!FAILED
+            (camsdk_(get_ExpTimeRange) (src->hCam, &nMin, &nMax, &nDef))) {
+            printf("  ExpTimeRange(): min %d, max %d, def %d\n", nMin,
+                   nMax, nDef);
         }
     }
     {
         unsigned short nMin, nMax, nDef;
-        if (!FAILED(camsdk_(get_ExpoAGainRange) (src->hCam, &nMin, &nMax, &nDef))) {
-            printf("  ExpoAGainRange(): min %d, max %d, def %d\n", nMin, nMax, nDef);
+        if (!FAILED
+            (camsdk_(get_ExpoAGainRange) (src->hCam, &nMin, &nMax, &nDef)))
+        {
+            printf("  ExpoAGainRange(): min %d, max %d, def %d\n", nMin,
+                   nMax, nDef);
         }
     }
 
@@ -786,9 +1124,9 @@ void gst_toupcam_pdebug(GstToupCamSrc * src)
         printf("  FpgaVersion(): %s\n", buff);
     }
 
-//Not supported in version 50
+    //Not supported in version 50
 #if CAMSDK_VERSION >= 53
-    const camsdk(ModelV2) *model = camsdk_(query_Model) (src->hCam);
+    const camsdk(ModelV2) * model = camsdk_(query_Model) (src->hCam);
     if (model) {
         printf("  ToupcamModelV2():\n");
         printf("    name: %s\n", model->name);
@@ -816,9 +1154,10 @@ void gst_toupcam_pdebug(GstToupCamSrc * src)
     // needs this to get the full 12 bit
     // camsdk_(put_Option)(src->hCam, CAMSDK_(OPTION_PIXEL_FORMAT),
     // CAMSDK_(PIXELFORMAT_RAW12)); raw code GBRG, bpp 12
-    printf("    RawFormat(): FourCC %c%c%c%c, BitsPerPixel %u\n", nFourCC[0], nFourCC[1],
-           nFourCC[2], nFourCC[3], bitsperpixel);
+    printf("    RawFormat(): FourCC %c%c%c%c, BitsPerPixel %u\n",
+           nFourCC[0], nFourCC[1], nFourCC[2], nFourCC[3], bitsperpixel);
 }
+
 
 static gboolean gst_toupcam_src_start(GstBaseSrc * bsrc)
 {
@@ -832,7 +1171,7 @@ static gboolean gst_toupcam_src_start(GstBaseSrc * bsrc)
 
     GstToupCamSrc *src = GST_TOUPCAM_SRC(bsrc);
 
-    GST_DEBUG_OBJECT (src, "gst_toupcam_src_start(): begin");
+    GST_DEBUG_OBJECT(src, "gst_toupcam_src_start(): begin");
 
     // Turn on automatic timestamping, if so we do not need to do it manually, BUT
     // there is some evidence that automatic timestamping is laggy
@@ -987,15 +1326,15 @@ static gboolean gst_toupcam_src_start(GstBaseSrc * bsrc)
     // TODO: move from static buff to frame_buff
     src->frame_buff = NULL;
 
-    hr = camsdk_(StartPullModeWithCallback) (src->hCam, sdk_callback_PullMode,
-                                             src);
+    hr = camsdk_(StartPullModeWithCallback) (src->hCam,
+                                             sdk_callback_PullMode, src);
     if (FAILED(hr)) {
         GST_ERROR_OBJECT(src, "failed to start camera, hr = %08x", hr);
         goto fail;
     }
 
 
-    GST_DEBUG_OBJECT (src, "gst_toupcam_src_start(): ok");
+    GST_DEBUG_OBJECT(src, "gst_toupcam_src_start(): ok");
     return TRUE;
 
   fail:
@@ -1213,11 +1552,11 @@ static GstFlowReturn pull_decode_frame(GstToupCamSrc * src,
                                        GstBuffer * buf)
 {
     /*
-    Max size is RGBA 16 bit => 8 bytes per pixel
-    FIXME: size this dynamically
-    For now just make it really big
-    Largest supported camera is E3ISPM25000KPA @ 25MP
-    */
+       Max size is RGBA 16 bit => 8 bytes per pixel
+       FIXME: size this dynamically
+       For now just make it really big
+       Largest supported camera is E3ISPM25000KPA @ 25MP
+     */
     static unsigned char raw_buff[4928 * 4928 * 4 * 2];
     // Copy image to buffer in the right way
     GstMapInfo minfo;

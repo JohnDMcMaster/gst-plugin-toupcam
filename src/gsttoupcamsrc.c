@@ -1436,9 +1436,6 @@ static gboolean gst_toupcam_src_set_caps(GstBaseSrc * bsrc, GstCaps * caps)
         goto unsupported_caps;
     }
 
-    // start freerun/continuous capture
-    src->acq_started = TRUE;
-
     return TRUE;
 
   unsupported_caps:

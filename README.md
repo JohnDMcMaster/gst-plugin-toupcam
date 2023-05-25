@@ -78,6 +78,9 @@ GST_PLUGIN_PATH=$PWD/src/.libs/ gst-launch-1.0 toupcamsrc auto_exposure=1 expoti
 # if all is good
 sudo make install
 echo "export GST_PLUGIN_PATH=/usr/local/lib/gstreamer-1.0" >> ~/.profile
+
+# Debug internal error
+GST_DEBUG=3,toupcamsrc:5 gst-launch-1.0 toupcamsrc ! queue ! videoconvert ! queue ! xvimagesink
 ```
 
 See the INSTALL file for advanced setup.

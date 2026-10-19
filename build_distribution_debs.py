@@ -60,15 +60,19 @@ def command(*args, cwd=None):
     )
 
 
-def select_engine(requested):
+def select_engines(requested):
     if requested != "auto":
         if shutil.which(requested) is None:
             raise SystemExit(f"Container engine not found: {requested}")
-        return requested
-    for candidate in ("podman", "docker"):
-        if shutil.which(candidate):
-            return candidate
-    raise SystemExit("Neither Podman nor Docker was found")
+        return [requested]
+    engines = [
+        candidate
+        for candidate in ("podman", "docker")
+        if shutil.which(candidate)
+    ]
+    if not engines:
+        raise SystemExit("Neither Podman nor Docker was found")
+    return engines
 
 
 def image_exists(engine, image):
@@ -189,31 +193,42 @@ def build_distribution(
 
 def main():
     args = parse_args()
-    engine = select_engine(args.engine)
+    engines = select_engines(args.engine)
     container_platform = host_platform()
     distributions = args.distributions or list(DISTRIBUTIONS)
     output_dir = args.output_dir.expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    print(f"Container engine: {engine}")
+    print(f"Container engines: {', '.join(engines)}")
     print(f"Container platform: {container_platform}")
     print(f"Output directory: {output_dir}")
     for distribution in distributions:
         print(f"\n=== Building {distribution} ===", flush=True)
-        image = build_image(
-            engine,
-            distribution,
-            DISTRIBUTIONS[distribution],
-            container_platform,
-            args.rebuild_images,
-        )
-        build_distribution(
-            engine,
-            distribution,
-            image,
-            output_dir,
-            container_platform,
-        )
+        for engine_index, engine in enumerate(engines):
+            try:
+                image = build_image(
+                    engine,
+                    distribution,
+                    DISTRIBUTIONS[distribution],
+                    container_platform,
+                    args.rebuild_images,
+                )
+                build_distribution(
+                    engine,
+                    distribution,
+                    image,
+                    output_dir,
+                    container_platform,
+                )
+                break
+            except subprocess.CalledProcessError:
+                if engine_index + 1 == len(engines):
+                    raise
+                print(
+                    f"\n{engine} failed; retrying {distribution} with "
+                    f"{engines[engine_index + 1]}",
+                    flush=True,
+                )
 
     print("\nBuilt packages:")
     for package in sorted(

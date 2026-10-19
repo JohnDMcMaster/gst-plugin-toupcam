@@ -138,6 +138,18 @@ Description: ToupTek Toupcam camera SDK
 set -e
 if command -v udevadm >/dev/null 2>&1; then
     udevadm control --reload-rules || true
+    udevadm trigger --subsystem-match=usb --action=add || true
+fi
+""",
+            0o755,
+        )
+        write_text(
+            package_root / "DEBIAN" / "postrm",
+            """#!/bin/sh
+set -e
+if command -v udevadm >/dev/null 2>&1; then
+    udevadm control --reload-rules || true
+    udevadm trigger --subsystem-match=usb --action=add || true
 fi
 """,
             0o755,

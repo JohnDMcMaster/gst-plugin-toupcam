@@ -22,3 +22,7 @@ install-sh
 ltmain.sh
 missing
 libtool
+
+# Local proprietary SDK inputs and generated Debian packages
+toupcamsdk/
+dist/

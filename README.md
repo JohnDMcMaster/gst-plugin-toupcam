@@ -85,6 +85,85 @@ GST_DEBUG=3,toupcamsrc:5 gst-launch-1.0 toupcamsrc ! queue ! videoconvert ! queu
 
 See the INSTALL file for advanced setup.
 
+# Debian packages
+
+The SDK and plugin packages can be built independently. The builders never
+download the proprietary SDK. Put vendor ZIP files in `toupcamsdk/`; when no
+ZIP is specified, each builder uses the alphabetically highest `*.zip`
+filename in that directory.
+
+The SDK ZIP can be downloaded from the
+[official ToupTek SDK download page](http://www.touptek.com/download/showdownload.php?lang=en&id=32).
+Download it manually because the package builders do not fetch SDK files.
+An older copy was mirrored at
+[microwiki.org](https://microwiki.org/media/touptek/toupcamsdk_53.21907.20221217.zip).
+
+Install the plugin build prerequisites:
+
+```
+sudo apt-get install -y autoconf automake libtool pkg-config build-essential \
+    dpkg-dev gstreamer1.0-tools libgstreamer1.0-dev \
+    libgstreamer-plugins-base1.0-dev
+```
+
+Build SDK packages for every architecture present in the vendor archive:
+
+```
+./build_toupcamsdk_deb.py
+# Or build only one architecture:
+./build_toupcamsdk_deb.py --architecture arm64
+# Or select an SDK explicitly:
+./build_toupcamsdk_deb.py /path/to/toupcamsdk_<version>.zip
+```
+
+The SDK package preserves the existing layout under `/opt/toupcamsdk`.
+Debian-path header and library copies are also installed so normal compiler
+and runtime library discovery continue to work.
+
+Build only the GStreamer plugin package:
+
+```
+./build_deb.py
+# Or select an SDK explicitly:
+./build_deb.py /path/to/toupcamsdk_<version>.zip
+```
+
+The plugin package version and filename include the build distribution from
+`/etc/os-release`, for example
+`gstreamer1.0-toupcam_0.5.0+ubuntu20.04_amd64.deb`. Use
+`--distribution-tag` to override automatic detection when building in a
+custom environment. The package metadata records and requires the exact
+Toupcam SDK version used for the build.
+
+To build packages for every supported distribution locally, install Podman
+or Docker and run:
+
+```
+./build_distribution_debs.py
+```
+
+The default matrix is Ubuntu 26.04, 24.04, and 22.04 plus Debian 12 and 13.
+The script prefers Podman and falls back to Docker. Toolchain container images
+are cached locally; use `--rebuild-images` to refresh them. Individual
+distributions can be selected when needed:
+
+```
+./build_distribution_debs.py --distribution ubuntu24.04
+./build_distribution_debs.py --engine docker --distribution debian13
+```
+
+Packages are grouped by SDK version under
+`dist/toupcamsdk_<version>/`. The plugin package declares an exact dependency
+on the SDK version used to build it, so install the generated SDK package
+before the plugin package:
+
+```
+sdk_version=53.21907.20221217
+sudo apt install ./dist/toupcamsdk_${sdk_version}/toupcamsdk_${sdk_version}_$(dpkg --print-architecture).deb
+# Select the plugin matching the installed distribution:
+sudo apt install ./dist/toupcamsdk_${sdk_version}/gstreamer1.0-toupcam_*+ubuntu24.04_$(dpkg --print-architecture).deb
+```
+
 # Usage
 
 ## Supported resolutions

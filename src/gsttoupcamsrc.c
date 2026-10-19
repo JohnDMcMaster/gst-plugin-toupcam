@@ -54,6 +54,7 @@ static gboolean gst_toupcam_src_start(GstBaseSrc * src);
 static gboolean gst_toupcam_src_stop(GstBaseSrc * src);
 static GstCaps *gst_toupcam_src_get_caps(GstBaseSrc * src,
                                          GstCaps * filter);
+static GstCaps *gst_toupcam_src_fixate(GstBaseSrc * src, GstCaps * caps);
 static gboolean gst_toupcam_src_set_caps(GstBaseSrc * src, GstCaps * caps);
 
 static GstFlowReturn gst_toupcam_src_fill(GstPushSrc * src,
@@ -92,6 +93,12 @@ enum {
 
     PROP_REVISION,
     PROP_MAX_BIT_DEPTH,
+    //Is this a monochrome sensor?
+    PROP_MONO,
+    //Bayer pattern as FourCC (ex: "RGGB"). Empty for mono
+    PROP_RAW_FORMAT,
+    //Significant bits per sample in the currently negotiated format
+    PROP_BIT_DEPTH,
     //Exposure time in us
     PROP_EXPOSURE_TIME_MIN,
     PROP_EXPOSURE_TIME_MAX,
@@ -152,19 +159,35 @@ Not sure where the limit comes from
 // These don't have defined enums for some reason
 #define GST_TOUPCAM_OPTION_BYTEORDER_RGB 0
 #define GST_TOUPCAM_OPTION_BYTEORDER_BGR 1
+// OPTION_RGB values
+#define GST_TOUPCAM_OPTION_RGB_RGB24 0
+#define GST_TOUPCAM_OPTION_RGB_RGB48 1
+#define GST_TOUPCAM_OPTION_RGB_RGB32 2
+#define GST_TOUPCAM_OPTION_RGB_GREY8 3
+#define GST_TOUPCAM_OPTION_RGB_GREY16 4
+#define GST_TOUPCAM_OPTION_RGB_RGB64 5
 
-int raw = 0;
-int x16 = 0;
+/*
+Output pixel formats
+
+The camera is configured based on the negotiated caps format
+Keep RGB first: its the default when downstream doesn't care (see fixate)
+
+RGB: 8 bit demosaiced RGB from the camera ISP (hue, gamma, etc applied)
+ARGB64: 16 bit demosaiced RGB (RGB48 from SDK, alpha unused)
+    Samples are left aligned (ex: 12 bit sensor => shifted left 4)
+GRAY16_LE: sensor raw. Bayer mosaic for color cameras (see raw-format property)
+    Samples are left aligned, see bit-depth property for actual depth
+    No demosaic / white balance / etc is applied: do that downstream
+GRAY8: 8 bit sensor raw / mono
+*/
+#define GST_TOUPCAM_FORMATS "{ RGB, ARGB64, GRAY16_LE, GRAY8 }"
 
 // pad template
-static GstStaticPadTemplate gst_toupcam_src_template_x8 =
-GST_STATIC_PAD_TEMPLATE("src", GST_PAD_SRC, GST_PAD_ALWAYS,
-                        GST_STATIC_CAPS(GST_VIDEO_CAPS_MAKE("{ RGB }")));
-
-static GstStaticPadTemplate gst_toupcam_src_template_x16 =
+static GstStaticPadTemplate gst_toupcam_src_template =
 GST_STATIC_PAD_TEMPLATE("src", GST_PAD_SRC, GST_PAD_ALWAYS,
                         GST_STATIC_CAPS(GST_VIDEO_CAPS_MAKE
-                                        ("{ ARGB64 }")));
+                                        (GST_TOUPCAM_FORMATS)));
 
 /* class initialisation */
 
@@ -252,6 +275,24 @@ static void install_properties(GObjectClass *gobject_class)
     g_object_class_install_property(gobject_class, PROP_MAX_BIT_DEPTH,
                                     g_param_spec_int("max-bit-depth", NULL,
                                                      NULL, 0, 16, 0,
+                                                     G_PARAM_READABLE));
+    g_object_class_install_property(gobject_class, PROP_MONO,
+                                    g_param_spec_boolean("mono",
+                                                         "Monochrome sensor",
+                                                         "Sensor has no color filter array",
+                                                         FALSE,
+                                                         G_PARAM_READABLE));
+    g_object_class_install_property(gobject_class, PROP_RAW_FORMAT,
+                                    g_param_spec_string("raw-format",
+                                                        "Raw format FourCC",
+                                                        "Bayer pattern of sensor raw data (ex: RGGB)",
+                                                        NULL,
+                                                        G_PARAM_READABLE));
+    g_object_class_install_property(gobject_class, PROP_BIT_DEPTH,
+                                    g_param_spec_int("bit-depth",
+                                                     "Current bit depth",
+                                                     "Significant bits per sample in the negotiated output format. 0 if not yet negotiated",
+                                                     0, 16, 0,
                                                      G_PARAM_READABLE));
 
 
@@ -438,7 +479,7 @@ static void install_properties(GObjectClass *gobject_class)
                                                          G_PARAM_WRITABLE));
 }
 
-static void gst_toupcam_src_class_init(GstToupCamSrcClass * klass)
+static void gst_toupcam_src_class_init(GstToupCamSrcClass *klass)
 {
     GObjectClass *gobject_class = G_OBJECT_CLASS(klass);
     GstElementClass *gstelement_class = GST_ELEMENT_CLASS(klass);
@@ -453,16 +494,9 @@ static void gst_toupcam_src_class_init(GstToupCamSrcClass * klass)
     gobject_class->dispose = gst_toupcam_src_dispose;
     gobject_class->finalize = gst_toupcam_src_finalize;
 
-    if (raw || x16) {
-        GST_DEBUG("select x16 template");
-        gst_element_class_add_pad_template(gstelement_class,
-                                           gst_static_pad_template_get
-                                           (&gst_toupcam_src_template_x16));
-    } else {
-        gst_element_class_add_pad_template(gstelement_class,
-                                           gst_static_pad_template_get
-                                           (&gst_toupcam_src_template_x8));
-    }
+    gst_element_class_add_pad_template(gstelement_class,
+                                       gst_static_pad_template_get
+                                       (&gst_toupcam_src_template));
 
     gst_element_class_set_static_metadata(gstelement_class,
                                           "ToupCam Video Source",
@@ -474,6 +508,7 @@ static void gst_toupcam_src_class_init(GstToupCamSrcClass * klass)
     gstbasesrc_class->stop = GST_DEBUG_FUNCPTR(gst_toupcam_src_stop);
     gstbasesrc_class->get_caps =
         GST_DEBUG_FUNCPTR(gst_toupcam_src_get_caps);
+    gstbasesrc_class->fixate = GST_DEBUG_FUNCPTR(gst_toupcam_src_fixate);
     gstbasesrc_class->set_caps =
         GST_DEBUG_FUNCPTR(gst_toupcam_src_set_caps);
 
@@ -485,10 +520,8 @@ static void gst_toupcam_src_class_init(GstToupCamSrcClass * klass)
     install_properties(gobject_class);
 }
 
-static void gst_toupcam_src_init(GstToupCamSrc * src)
+static void gst_toupcam_src_init(GstToupCamSrc *src)
 {
-    src->raw = raw;
-    src->x16 = x16;
     src->auto_exposure = DEFAULT_PROP_AUTO_EXPOSURE;
     src->expotime = DEFAULT_PROP_EXPOTIME;
     src->expoagain = DEFAULT_PROP_EXPOAGAIN;
@@ -521,14 +554,44 @@ static void gst_toupcam_src_init(GstToupCamSrc * src)
     gst_toupcam_src_reset(src);
 }
 
-static void gst_toupcam_src_reset(GstToupCamSrc * src)
+static void gst_toupcam_src_reset(GstToupCamSrc *src)
 {
     src->hCam = 0;
+    src->streaming = FALSE;
+    gst_video_info_init(&src->vinfo);
+    src->max_bit_depth = 0;
+    src->mono = FALSE;
+    src->sensor_bits = 0;
+    src->sdk_bits = 0;
+    src->shift16 = 0;
+    src->bytes_per_pix_in = 0;
+    g_free(src->scratch);
+    src->scratch = NULL;
+    src->scratch_size = 0;
     src->imagesAvailable = 0;
     src->imagesPulled = 0;
     src->total_timeouts = 0;
     src->last_frame_time = 0;
     src->m_total = 0;
+}
+
+static gboolean gst_toupcam_src_get_raw_fourcc(GstToupCamSrc *src,
+                                               char fourcc[5])
+{
+    unsigned nFourCC = 0;
+    unsigned bitsperpixel = 0;
+
+    fourcc[0] = 0;
+    if (!src->hCam) {
+        return FALSE;
+    }
+    if (FAILED
+        (camsdk_(get_RawFormat) (src->hCam, &nFourCC, &bitsperpixel))) {
+        return FALSE;
+    }
+    memcpy(fourcc, &nFourCC, 4);
+    fourcc[4] = 0;
+    return TRUE;
 }
 
 static void my_rgb_cb(const int aGain[3], void *pCtx)
@@ -545,8 +608,8 @@ static void my_tt_cb(const int nTemp, const int nTint, void *pCtx)
     src->awb_tt = 0;
 }
 
-void gst_toupcam_src_set_property(GObject * object, guint property_id,
-                                  const GValue * value, GParamSpec * pspec)
+void gst_toupcam_src_set_property(GObject *object, guint property_id,
+                                  const GValue *value, GParamSpec *pspec)
 {
     GstToupCamSrc *src;
 
@@ -686,22 +749,22 @@ void gst_toupcam_src_set_property(GObject * object, guint property_id,
     }
 }
 
-static void try_get_black_balance(GstToupCamSrc * src)
+static void try_get_black_balance(GstToupCamSrc *src)
 {
     if (src->hCam) {
         camsdk_(get_BlackBalance) (src->hCam, src->black_balance);
     }
 }
 
-static void try_get_white_balance(GstToupCamSrc * src)
+static void try_get_white_balance(GstToupCamSrc *src)
 {
     if (src->hCam) {
         camsdk_(get_WhiteBalanceGain) (src->hCam, src->white_balance);
     }
 }
 
-void gst_toupcam_src_get_property(GObject * object, guint property_id,
-                                  GValue * value, GParamSpec * pspec)
+void gst_toupcam_src_get_property(GObject *object, guint property_id,
+                                  GValue *value, GParamSpec *pspec)
 {
     GstToupCamSrc *src;
     char buff[64] = "";
@@ -810,13 +873,26 @@ void gst_toupcam_src_get_property(GObject * object, guint property_id,
         }
         g_value_set_int(value, tempi);
         break;
+    case PROP_MONO:
+        g_value_set_boolean(value, src->mono);
+        break;
+    case PROP_RAW_FORMAT:{
+            char fourcc[5] = "";
+            if (!src->mono) {
+                gst_toupcam_src_get_raw_fourcc(src, fourcc);
+            }
+            g_value_set_string(value, fourcc);
+            break;
+        }
+    case PROP_BIT_DEPTH:
+        g_value_set_int(value, src->sensor_bits);
+        break;
 
     case PROP_EXPOSURE_TIME_MIN:
         if (src->hCam) {
             unsigned nMin, nMax, nDef;
-            if (!FAILED
-                (camsdk_(get_ExpTimeRange)
-                 (src->hCam, &nMin, &nMax, &nDef))) {
+            if (!FAILED(camsdk_(get_ExpTimeRange)
+                        (src->hCam, &nMin, &nMax, &nDef))) {
                 tempi = nMin;
             }
         }
@@ -825,9 +901,8 @@ void gst_toupcam_src_get_property(GObject * object, guint property_id,
     case PROP_EXPOSURE_TIME_MAX:
         if (src->hCam) {
             unsigned nMin, nMax, nDef;
-            if (!FAILED
-                (camsdk_(get_ExpTimeRange)
-                 (src->hCam, &nMin, &nMax, &nDef))) {
+            if (!FAILED(camsdk_(get_ExpTimeRange)
+                        (src->hCam, &nMin, &nMax, &nDef))) {
                 tempi = nMax;
             }
         }
@@ -836,9 +911,8 @@ void gst_toupcam_src_get_property(GObject * object, guint property_id,
     case PROP_EXPOSURE_TIME_DEFAULT:
         if (src->hCam) {
             unsigned nMin, nMax, nDef;
-            if (!FAILED
-                (camsdk_(get_ExpTimeRange)
-                 (src->hCam, &nMin, &nMax, &nDef))) {
+            if (!FAILED(camsdk_(get_ExpTimeRange)
+                        (src->hCam, &nMin, &nMax, &nDef))) {
                 tempi = nDef;
             }
         }
@@ -848,9 +922,8 @@ void gst_toupcam_src_get_property(GObject * object, guint property_id,
     case PROP_EXPOSURE_AGAIN_MIN:
         if (src->hCam) {
             unsigned short nMin, nMax, nDef;
-            if (!FAILED
-                (camsdk_(get_ExpoAGainRange)
-                 (src->hCam, &nMin, &nMax, &nDef))) {
+            if (!FAILED(camsdk_(get_ExpoAGainRange)
+                        (src->hCam, &nMin, &nMax, &nDef))) {
                 tempi = nMin;
             }
         }
@@ -859,9 +932,8 @@ void gst_toupcam_src_get_property(GObject * object, guint property_id,
     case PROP_EXPOSURE_AGAIN_MAX:
         if (src->hCam) {
             unsigned short nMin, nMax, nDef;
-            if (!FAILED
-                (camsdk_(get_ExpoAGainRange)
-                 (src->hCam, &nMin, &nMax, &nDef))) {
+            if (!FAILED(camsdk_(get_ExpoAGainRange)
+                        (src->hCam, &nMin, &nMax, &nDef))) {
                 tempi = nMax;
             }
         }
@@ -870,9 +942,8 @@ void gst_toupcam_src_get_property(GObject * object, guint property_id,
     case PROP_EXPOSURE_AGAIN_DEFAULT:
         if (src->hCam) {
             unsigned short nMin, nMax, nDef;
-            if (!FAILED
-                (camsdk_(get_ExpoAGainRange)
-                 (src->hCam, &nMin, &nMax, &nDef))) {
+            if (!FAILED(camsdk_(get_ExpoAGainRange)
+                        (src->hCam, &nMin, &nMax, &nDef))) {
                 tempi = nDef;
             }
         }
@@ -986,7 +1057,7 @@ void gst_toupcam_src_get_property(GObject * object, guint property_id,
     }
 }
 
-void gst_toupcam_src_dispose(GObject * object)
+void gst_toupcam_src_dispose(GObject *object)
 {
     GstToupCamSrc *src;
 
@@ -1000,7 +1071,7 @@ void gst_toupcam_src_dispose(GObject * object)
     G_OBJECT_CLASS(gst_toupcam_src_parent_class)->dispose(object);
 }
 
-void gst_toupcam_src_finalize(GObject * object)
+void gst_toupcam_src_finalize(GObject *object)
 {
     GstToupCamSrc *src;
 
@@ -1010,6 +1081,10 @@ void gst_toupcam_src_finalize(GObject * object)
     GST_DEBUG_OBJECT(src, "finalize");
 
     /* clean up object here */
+    g_free(src->scratch);
+    src->scratch = NULL;
+    g_mutex_clear(&src->mutex);
+    g_cond_clear(&src->cond);
     G_OBJECT_CLASS(gst_toupcam_src_parent_class)->finalize(object);
 }
 
@@ -1031,7 +1106,7 @@ static void sdk_callback_PullMode(unsigned nEvent, void *pCallbackCtx)
                      nEvent, src->imagesAvailable);
 }
 
-void gst_toupcam_pdebug(GstToupCamSrc * src)
+void gst_toupcam_pdebug(GstToupCamSrc *src)
 {
     int itmp;
     short stmp;
@@ -1156,10 +1231,22 @@ void gst_toupcam_pdebug(GstToupCamSrc * src)
     // CAMSDK_(PIXELFORMAT_RAW12)); raw code GBRG, bpp 12
     printf("    RawFormat(): FourCC %c%c%c%c, BitsPerPixel %u\n",
            nFourCC[0], nFourCC[1], nFourCC[2], nFourCC[3], bitsperpixel);
+    // gstreamer caps formats this camera can be negotiated to
+    // NOTE: keep this after RawFormat (pyuscope parses sequentially)
+    {
+        GstCaps *caps = gst_toupcam_src_get_caps(GST_BASE_SRC(src), NULL);
+        const GValue *formats =
+            gst_structure_get_value(gst_caps_get_structure(caps, 0),
+                                    "format");
+        gchar *s = gst_value_serialize(formats);
+        printf("  Formats(): %s\n", s);
+        g_free(s);
+        gst_caps_unref(caps);
+    }
 }
 
 
-static gboolean gst_toupcam_src_start(GstBaseSrc * bsrc)
+static gboolean gst_toupcam_src_start(GstBaseSrc *bsrc)
 {
     camsdk(DeviceV2) arr[CAMSDK_(MAX)];
 
@@ -1198,10 +1285,6 @@ static gboolean gst_toupcam_src_start(GstBaseSrc * bsrc)
         goto fail;
     }
 
-    if (getenv("GST_TOUPCAMSRC_INFO")) {
-        gst_toupcam_pdebug(src);
-    }
-
     HRESULT hr;
 
     hr = camsdk_(put_eSize) (src->hCam, src->esize);
@@ -1215,71 +1298,24 @@ static gboolean gst_toupcam_src_start(GstBaseSrc * bsrc)
         goto fail;
     }
 
-    if (src->raw) {
-        // can set raw8 and raw12, but not raw16
-        // default raw8
-        GST_DEBUG_OBJECT(src, "setup image mode: raw");
-        if (1) {
-            hr = camsdk_(put_Option) (src->hCam,
-                                      CAMSDK_(OPTION_PIXEL_FORMAT),
-                                      CAMSDK_(PIXELFORMAT_RAW12));
-            if (FAILED(hr)) {
-                GST_ERROR_OBJECT(src,
-                                 "failed to set pixel format, hr = %08x",
-                                 hr);
-                goto fail;
-            }
-        }
-        // no output when this is enabled...why?
-        if (1) {
-            // enable raw
-            hr = camsdk_(put_Option) (src->hCam, CAMSDK_(OPTION_RAW), 1);
-            if (FAILED(hr)) {
-                GST_ERROR_OBJECT(src, "failed to enable raw, hr = %08x",
-                                 hr);
-                goto fail;
-            }
-        }
-        if (1) {
-            // 16 bit output
-            hr = camsdk_(put_Option) (src->hCam, CAMSDK_(OPTION_BITDEPTH),
-                                      1);
-            if (FAILED(hr)) {
-                GST_ERROR_OBJECT(src, "failed to enable 16 bit, hr = %08x",
-                                 hr);
-                goto fail;
-            }
-        }
-    } else if (src->x16) {
-        // can set raw8 and raw12, but not raw16
-        // default raw8
-        GST_DEBUG_OBJECT(src, "setup image mode: x16");
+    // Camera capabilities used to restrict negotiable formats
+    src->max_bit_depth = camsdk_(get_MaxBitDepth) (src->hCam);
+    if (src->max_bit_depth < 8) {
+        GST_WARNING_OBJECT(src, "bad max bit depth %d, assuming 8",
+                           src->max_bit_depth);
+        src->max_bit_depth = 8;
+    }
+    // S_OK (0): mono, S_FALSE (1): color
+    src->mono = camsdk_(get_MonoMode) (src->hCam) == 0;
+    GST_INFO_OBJECT(src, "max bit depth %d, mono %d", src->max_bit_depth,
+                    src->mono);
 
-        // 16 bit output
-        hr = camsdk_(put_Option) (src->hCam, CAMSDK_(OPTION_BITDEPTH), 1);
-        if (FAILED(hr)) {
-            GST_ERROR_OBJECT(src, "failed to enable 16 bit, hr = %08x",
-                             hr);
-            goto fail;
-        }
-
-        // RGB48
-        hr = camsdk_(put_Option) (src->hCam, CAMSDK_(OPTION_RGB), 1);
-        if (FAILED(hr)) {
-            GST_ERROR_OBJECT(src, "failed to enable raw, hr = %08x", hr);
-            goto fail;
-        }
-    } else {
-        GST_DEBUG_OBJECT(src, "setup image mode: regular");
-        camsdk_(put_Option) (src->hCam, CAMSDK_(OPTION_BYTEORDER),
-                             GST_TOUPCAM_OPTION_BYTEORDER_RGB);
-        camsdk_(put_Hue) (src->hCam, src->hue);
-        camsdk_(put_Saturation) (src->hCam, src->saturation);
-        camsdk_(put_Brightness) (src->hCam, src->brightness);
-        camsdk_(put_Contrast) (src->hCam, src->contrast);
-        camsdk_(put_Gamma) (src->hCam, src->gamma);
+    if (getenv("GST_TOUPCAMSRC_INFO")) {
+        gst_toupcam_pdebug(src);
     }
 
+    // Format independent settings
+    // Format specific settings (bit depth, raw, etc) are applied in set_caps
     camsdk_(put_HFlip) (src->hCam, src->hflip);
     camsdk_(put_VFlip) (src->hCam, src->vflip);
     hr = camsdk_(put_AutoExpoEnable) (src->hCam, src->auto_exposure);
@@ -1292,60 +1328,235 @@ static gboolean gst_toupcam_src_start(GstBaseSrc * bsrc)
         camsdk_(put_ExpoTime) (src->hCam, src->expotime);
     }
 
-    // BGR 24-bit is primarily supported
-    // Some attempts at 16 bit
-    if (src->raw || src->x16) {
-        src->bits_per_pix_out = 64;
-        src->bytes_per_pix_out = 8;
-        src->bytes_per_pix_in = 6;
-    } else {
-        src->bits_per_pix_out = 24;
-        src->bytes_per_pix_out = 3;
-        src->bytes_per_pix_in = 3;
-    }
-
     unsigned nFrame, nTime, nTotalFrame;
     camsdk_(get_FrameRate) (src->hCam, &nFrame, &nTime, &nTotalFrame);
     src->framerate = nFrame * 1000.0 / nTime;
     src->duration = 1000000000.0 / src->framerate;
 
-    src->image_bytes_in =
-        src->nWidth * src->nHeight * src->bytes_per_pix_in;
-    src->image_bytes_out =
-        src->nWidth * src->nHeight * src->bytes_per_pix_out;
-    // GST_DEBUG_OBJECT (src, "Image is %d x %d, pitch %d, bpp %d, Bpp %d",
-    // src->nWidth, src->nHeight, src->bits_per_pix_out, src->bytes_per_pix_out);
-    GST_DEBUG_OBJECT(src,
-                     "Image %d w x %d h, in %d bytes / pix => %d bytes (%0.1f "
-                     "MB), out %d bytes / pix => %d bytes (%0.1f MB)",
-                     src->nWidth, src->nHeight, src->bytes_per_pix_in,
-                     src->image_bytes_in, src->image_bytes_in / 1e6,
-                     src->bytes_per_pix_out, src->image_bytes_out,
-                     src->image_bytes_out / 1e6);
-
-    // TODO: move from static buff to frame_buff
-    src->frame_buff = NULL;
-
-    hr = camsdk_(StartPullModeWithCallback) (src->hCam,
-                                             sdk_callback_PullMode, src);
-    if (FAILED(hr)) {
-        GST_ERROR_OBJECT(src, "failed to start camera, hr = %08x", hr);
-        goto fail;
-    }
-
-
-    GST_DEBUG_OBJECT(src, "gst_toupcam_src_start(): ok");
+    GST_DEBUG_OBJECT(src, "gst_toupcam_src_start(): ok (%d w x %d h)",
+                     src->nWidth, src->nHeight);
     return TRUE;
 
   fail:
     if (src->hCam) {
+        camsdk_(Close) (src->hCam);
         src->hCam = NULL;
     }
 
     return FALSE;
 }
 
-static gboolean gst_toupcam_src_stop(GstBaseSrc * bsrc)
+/*
+Configure the SDK for the given gstreamer output format and (re)start streaming
+Must be called with streaming stopped (OPTION_RAW can only be set before Start)
+*/
+static gboolean gst_toupcam_src_configure_format(GstToupCamSrc *src,
+                                                 GstVideoFormat format)
+{
+    HRESULT hr;
+    gboolean raw = FALSE;
+    gboolean x16 = FALSE;
+    int rgb_option = GST_TOUPCAM_OPTION_RGB_RGB24;
+
+    switch (format) {
+    case GST_VIDEO_FORMAT_RGB:
+        GST_DEBUG_OBJECT(src, "setup image mode: RGB");
+        src->sdk_bits = 24;
+        src->bytes_per_pix_in = 3;
+        break;
+    case GST_VIDEO_FORMAT_ARGB64:
+        GST_DEBUG_OBJECT(src, "setup image mode: ARGB64 (via RGB48)");
+        x16 = TRUE;
+        rgb_option = GST_TOUPCAM_OPTION_RGB_RGB48;
+        src->sdk_bits = 48;
+        src->bytes_per_pix_in = 6;
+        break;
+    case GST_VIDEO_FORMAT_GRAY16_LE:
+        GST_DEBUG_OBJECT(src, "setup image mode: GRAY16_LE (raw)");
+        x16 = TRUE;
+        if (src->mono) {
+            rgb_option = GST_TOUPCAM_OPTION_RGB_GREY16;
+            src->sdk_bits = 16;
+        } else {
+            raw = TRUE;
+            // 0 => native raw data
+            src->sdk_bits = 0;
+        }
+        src->bytes_per_pix_in = 2;
+        break;
+    case GST_VIDEO_FORMAT_GRAY8:
+        GST_DEBUG_OBJECT(src, "setup image mode: GRAY8 (raw)");
+        if (src->mono) {
+            rgb_option = GST_TOUPCAM_OPTION_RGB_GREY8;
+            src->sdk_bits = 8;
+        } else {
+            raw = TRUE;
+            src->sdk_bits = 0;
+        }
+        src->bytes_per_pix_in = 1;
+        break;
+    default:
+        GST_ERROR_OBJECT(src, "unsupported format %s",
+                         gst_video_format_to_string(format));
+        return FALSE;
+    }
+
+    if (x16 && src->max_bit_depth <= 8) {
+        GST_ERROR_OBJECT(src,
+                         "16 bit format requested but camera max bit depth is %d",
+                         src->max_bit_depth);
+        return FALSE;
+    }
+
+    if (raw) {
+        // Select the deepest raw pixel format the sensor supports
+        // OPTION_BITDEPTH is documented as a subset of this
+        // so not fatal if the SDK rejects it
+        if (x16) {
+            int pixel_format = CAMSDK_(PIXELFORMAT_RAW12);
+            switch (src->max_bit_depth) {
+            case 10:
+                pixel_format = CAMSDK_(PIXELFORMAT_RAW10);
+                break;
+            case 12:
+                pixel_format = CAMSDK_(PIXELFORMAT_RAW12);
+                break;
+            case 14:
+                pixel_format = CAMSDK_(PIXELFORMAT_RAW14);
+                break;
+            case 16:
+                pixel_format = CAMSDK_(PIXELFORMAT_RAW16);
+                break;
+            default:
+                GST_WARNING_OBJECT(src,
+                                   "unexpected max bit depth %d, trying RAW12",
+                                   src->max_bit_depth);
+            }
+            hr = camsdk_(put_Option) (src->hCam,
+                                      CAMSDK_(OPTION_PIXEL_FORMAT),
+                                      pixel_format);
+            if (FAILED(hr)) {
+                GST_WARNING_OBJECT(src,
+                                   "failed to set pixel format %d, hr = %08x",
+                                   pixel_format, hr);
+            }
+        } else {
+            hr = camsdk_(put_Option) (src->hCam,
+                                      CAMSDK_(OPTION_PIXEL_FORMAT),
+                                      CAMSDK_(PIXELFORMAT_RAW8));
+            if (FAILED(hr)) {
+                GST_WARNING_OBJECT(src,
+                                   "failed to set pixel format RAW8, hr = %08x",
+                                   hr);
+            }
+        }
+    }
+
+    /*
+       Restoring an SDK default (0) is allowed to fail: some cameras reject
+       options they don't implement and we don't want to break the plain RGB
+       path on them. Requesting a non-default is fatal if rejected
+     */
+    hr = camsdk_(put_Option) (src->hCam, CAMSDK_(OPTION_RAW), raw ? 1 : 0);
+    if (FAILED(hr)) {
+        if (raw) {
+            GST_ERROR_OBJECT(src, "failed to set raw=%d, hr = %08x", raw,
+                             hr);
+            return FALSE;
+        }
+        GST_WARNING_OBJECT(src, "failed to set raw=0, hr = %08x", hr);
+    }
+    hr = camsdk_(put_Option) (src->hCam, CAMSDK_(OPTION_BITDEPTH),
+                              x16 ? 1 : 0);
+    if (FAILED(hr)) {
+        if (x16) {
+            GST_ERROR_OBJECT(src, "failed to set bitdepth=%d, hr = %08x",
+                             x16, hr);
+            return FALSE;
+        }
+        GST_WARNING_OBJECT(src, "failed to set bitdepth=0, hr = %08x", hr);
+    }
+    if (!raw) {
+        hr = camsdk_(put_Option) (src->hCam, CAMSDK_(OPTION_RGB),
+                                  rgb_option);
+        if (FAILED(hr)) {
+            if (rgb_option != GST_TOUPCAM_OPTION_RGB_RGB24) {
+                GST_ERROR_OBJECT(src, "failed to set rgb=%d, hr = %08x",
+                                 rgb_option, hr);
+                return FALSE;
+            }
+            GST_WARNING_OBJECT(src, "failed to set rgb=0, hr = %08x", hr);
+        }
+        camsdk_(put_Option) (src->hCam, CAMSDK_(OPTION_BYTEORDER),
+                             GST_TOUPCAM_OPTION_BYTEORDER_RGB);
+        // ISP settings. Not applicable to raw
+        camsdk_(put_Hue) (src->hCam, src->hue);
+        camsdk_(put_Saturation) (src->hCam, src->saturation);
+        camsdk_(put_Brightness) (src->hCam, src->brightness);
+        camsdk_(put_Contrast) (src->hCam, src->contrast);
+        camsdk_(put_Gamma) (src->hCam, src->gamma);
+    }
+
+    // Figure out how many significant bits we are getting
+    if (x16) {
+        unsigned nFourCC = 0;
+        unsigned bitsperpixel = 0;
+        src->sensor_bits = src->max_bit_depth;
+        // In raw mode this reflects the selected pixel format
+        if (raw && !FAILED(camsdk_(get_RawFormat)
+                           (src->hCam, &nFourCC, &bitsperpixel))
+            && bitsperpixel > 8 && bitsperpixel <= 16) {
+            src->sensor_bits = bitsperpixel;
+        }
+        src->shift16 = 16 - src->sensor_bits;
+    } else {
+        src->sensor_bits = 8;
+        src->shift16 = 0;
+    }
+    GST_INFO_OBJECT(src,
+                    "format %s: raw %d, x16 %d, sdk bits %d, sensor bits %d, shift %d",
+                    gst_video_format_to_string(format), raw, x16,
+                    src->sdk_bits, src->sensor_bits, src->shift16);
+    return TRUE;
+}
+
+static gboolean gst_toupcam_src_stream_stop(GstToupCamSrc *src)
+{
+    if (!src->streaming) {
+        return TRUE;
+    }
+    GST_DEBUG_OBJECT(src, "stopping stream");
+    HRESULT hr = camsdk_(Stop) (src->hCam);
+    src->streaming = FALSE;
+    if (FAILED(hr)) {
+        GST_ERROR_OBJECT(src, "failed to stop camera, hr = %08x", hr);
+        return FALSE;
+    }
+    return TRUE;
+}
+
+static gboolean gst_toupcam_src_stream_start(GstToupCamSrc *src)
+{
+    g_assert(!src->streaming);
+    // Discard any bookkeeping from the previous stream
+    g_mutex_lock(&src->mutex);
+    src->imagesAvailable = 0;
+    src->imagesPulled = 0;
+    g_mutex_unlock(&src->mutex);
+
+    GST_DEBUG_OBJECT(src, "starting stream");
+    HRESULT hr = camsdk_(StartPullModeWithCallback) (src->hCam,
+                                                     sdk_callback_PullMode,
+                                                     src);
+    if (FAILED(hr)) {
+        GST_ERROR_OBJECT(src, "failed to start camera, hr = %08x", hr);
+        return FALSE;
+    }
+    src->streaming = TRUE;
+    return TRUE;
+}
+
+static gboolean gst_toupcam_src_stop(GstBaseSrc *bsrc)
 {
     // Start will open the device but not start it, set_caps starts it, stop
     // should stop and close it (as v4l2src)
@@ -1353,15 +1564,17 @@ static gboolean gst_toupcam_src_stop(GstBaseSrc * bsrc)
     GstToupCamSrc *src = GST_TOUPCAM_SRC(bsrc);
 
     GST_DEBUG_OBJECT(src, "gst_toupcam_src_stop()");
-    camsdk_(Close) (src->hCam);
+    if (src->hCam) {
+        gst_toupcam_src_stream_stop(src);
+        camsdk_(Close) (src->hCam);
+    }
 
     gst_toupcam_src_reset(src);
 
     return TRUE;
 }
 
-static GstCaps *gst_toupcam_src_get_caps(GstBaseSrc * bsrc,
-                                         GstCaps * filter)
+static GstCaps *gst_toupcam_src_get_caps(GstBaseSrc *bsrc, GstCaps *filter)
 {
     GstToupCamSrc *src = GST_TOUPCAM_SRC(bsrc);
     GstCaps *caps;
@@ -1369,32 +1582,36 @@ static GstCaps *gst_toupcam_src_get_caps(GstBaseSrc * bsrc,
     if (src->hCam == 0) {
         caps = gst_pad_get_pad_template_caps(GST_BASE_SRC_PAD(src));
     } else {
-        GstVideoInfo vinfo;
-
-        // Create video info
-        gst_video_info_init(&vinfo);
-
-        vinfo.width = src->nWidth;
-        vinfo.height = src->nHeight;
+        // Formats this camera can actually produce
+        // 16 bit formats require a > 8 bit sensor
+        GValue formats = G_VALUE_INIT;
+        GValue fmt = G_VALUE_INIT;
+        const char *all[] = { "RGB", "ARGB64", "GRAY16_LE", "GRAY8" };
+        g_value_init(&formats, GST_TYPE_LIST);
+        g_value_init(&fmt, G_TYPE_STRING);
+        for (unsigned i = 0; i < G_N_ELEMENTS(all); ++i) {
+            GstVideoFormat f = gst_video_format_from_string(all[i]);
+            if (src->max_bit_depth <= 8
+                && (f == GST_VIDEO_FORMAT_ARGB64
+                    || f == GST_VIDEO_FORMAT_GRAY16_LE)) {
+                continue;
+            }
+            g_value_set_string(&fmt, all[i]);
+            gst_value_list_append_value(&formats, &fmt);
+        }
+        g_value_unset(&fmt);
 
         // Frames per second fraction n/d, 0/1 indicates a frame rate may vary
-        vinfo.fps_n = 0;
-        vinfo.fps_d = 1;
-        vinfo.interlace_mode = GST_VIDEO_INTERLACE_MODE_PROGRESSIVE;
-
-        if (src->raw || src->x16) {
-            vinfo.finfo =
-                gst_video_format_get_info(GST_VIDEO_FORMAT_ARGB64);
-        } else {
-            vinfo.finfo = gst_video_format_get_info(GST_VIDEO_FORMAT_RGB);
-        }
-
-        // cannot do this for variable frame rate
-        // src->duration = gst_util_uint64_scale_int (GST_SECOND, vinfo.fps_d,
-        // vinfo.fps_n); // NB n and d are wrong way round to invert the fps into a
-        // duration.
-
-        caps = gst_video_info_to_caps(&vinfo);
+        caps = gst_caps_new_simple("video/x-raw",
+                                   "width", G_TYPE_INT, src->nWidth,
+                                   "height", G_TYPE_INT, src->nHeight,
+                                   "framerate", GST_TYPE_FRACTION, 0, 1,
+                                   "interlace-mode", G_TYPE_STRING,
+                                   "progressive",
+                                   "pixel-aspect-ratio",
+                                   GST_TYPE_FRACTION, 1, 1, NULL);
+        gst_caps_set_value(caps, "format", &formats);
+        g_value_unset(&formats);
     }
 
     //this func is called a lot and spams the output
@@ -1413,27 +1630,91 @@ static GstCaps *gst_toupcam_src_get_caps(GstBaseSrc * bsrc,
     return caps;
 }
 
-static gboolean gst_toupcam_src_set_caps(GstBaseSrc * bsrc, GstCaps * caps)
+static GstCaps *gst_toupcam_src_fixate(GstBaseSrc *bsrc, GstCaps *caps)
 {
-    // Start will open the device but not start it, set_caps starts it, stop
-    // should stop and close it (as v4l2src)
+    GstToupCamSrc *src = GST_TOUPCAM_SRC(bsrc);
+    GstStructure *s;
+
+    // Default to 8 bit RGB if downstream doesn't care
+    // ie plain "toupcamsrc ! videoconvert" behaves like it always has
+    caps = gst_caps_make_writable(caps);
+    s = gst_caps_get_structure(caps, 0);
+    gst_structure_fixate_field_string(s, "format", "RGB");
+    GST_DEBUG_OBJECT(src, "fixated to %" GST_PTR_FORMAT, caps);
+
+    return GST_BASE_SRC_CLASS(gst_toupcam_src_parent_class)->fixate(bsrc,
+                                                                    caps);
+}
+
+static gboolean gst_toupcam_src_set_caps(GstBaseSrc *bsrc, GstCaps *caps)
+{
+    // Start opens the device but does not start it
+    // set_caps configures the pixel format and starts it
+    // stop stops and closes it (as v4l2src)
+    // Caps renegotiation (ex: downstream capsfilter changes format)
+    // stops the camera, reconfigures, and restarts
 
     GstToupCamSrc *src = GST_TOUPCAM_SRC(bsrc);
     GstVideoInfo vinfo;
-    // GstStructure *s = gst_caps_get_structure (caps, 0);
+    GstVideoFormat format;
 
     GST_INFO_OBJECT(src, "The caps being set are %" GST_PTR_FORMAT, caps);
 
-    gst_video_info_from_caps(&vinfo, caps);
-
-    if (GST_VIDEO_INFO_FORMAT(&vinfo) != GST_VIDEO_FORMAT_UNKNOWN) {
-        g_assert(src->hCam != 0);
-        //  src->vrm_stride = get_pitch (src->device);  // wait for image to arrive
-        //  for this
-        src->gst_stride = GST_VIDEO_INFO_COMP_STRIDE(&vinfo, 0);
-        src->nHeight = vinfo.height;
-    } else {
+    if (!gst_video_info_from_caps(&vinfo, caps)) {
         goto unsupported_caps;
+    }
+    format = GST_VIDEO_INFO_FORMAT(&vinfo);
+    if (format == GST_VIDEO_FORMAT_UNKNOWN) {
+        goto unsupported_caps;
+    }
+    g_assert(src->hCam != 0);
+
+    if (vinfo.width != src->nWidth || vinfo.height != src->nHeight) {
+        GST_ERROR_OBJECT(src,
+                         "caps %d w x %d h don't match camera %d w x %d h",
+                         vinfo.width, vinfo.height, src->nWidth,
+                         src->nHeight);
+        goto unsupported_caps;
+    }
+
+    if (src->streaming && format == GST_VIDEO_INFO_FORMAT(&src->vinfo)) {
+        GST_DEBUG_OBJECT(src, "format unchanged");
+        src->vinfo = vinfo;
+        return TRUE;
+    }
+
+    if (!gst_toupcam_src_stream_stop(src)) {
+        return FALSE;
+    }
+    if (!gst_toupcam_src_configure_format(src, format)) {
+        goto unsupported_caps;
+    }
+
+    // Scratch buffer for formats needing conversion
+    g_free(src->scratch);
+    src->scratch = NULL;
+    src->scratch_size = 0;
+    src->scratch_pitch = 0;
+    if (format == GST_VIDEO_FORMAT_ARGB64) {
+        // SDK default pitch: rows padded to 4 bytes
+        src->scratch_pitch =
+            ((src->nWidth * src->bytes_per_pix_in * 8 + 31) & ~31) / 8;
+        src->scratch_size = (gsize) src->scratch_pitch * src->nHeight;
+        src->scratch = g_malloc(src->scratch_size);
+    }
+
+    src->vinfo = vinfo;
+    GST_DEBUG_OBJECT(src,
+                     "Image %d w x %d h, in %d bytes / pix (%0.1f MB), out %"
+                     G_GSIZE_FORMAT " bytes (%0.1f MB), stride %d",
+                     src->nWidth, src->nHeight, src->bytes_per_pix_in,
+                     (double) src->nWidth * src->nHeight *
+                     src->bytes_per_pix_in / 1e6, vinfo.size,
+                     vinfo.size / 1e6, GST_VIDEO_INFO_PLANE_STRIDE(&vinfo,
+                                                                   0));
+
+    if (!gst_toupcam_src_stream_start(src)) {
+        return FALSE;
     }
 
     return TRUE;
@@ -1443,80 +1724,40 @@ static gboolean gst_toupcam_src_set_caps(GstBaseSrc * bsrc, GstCaps * caps)
     return FALSE;
 }
 
-// raw to common format
-void GBRG12_to_ARGB64_x4(GstToupCamSrc * src, const unsigned char *bufin,
-                         unsigned char *bufout)
+/*
+Left align samples in a 16 bit container
+ex: 12 bit raw => shift left 4 so full scale is 0xFFF0
+Operates in place on a single row
+*/
+static inline void shift16_row(uint16_t *row, unsigned n, unsigned shift)
 {
-    for (unsigned y = 0; y < src->nHeight; ++y) {
-        for (unsigned x = 0; x < src->nWidth; ++x) {
-            uint16_t pix16 = (bufin[1] << 12) | (bufin[0] << 4);
-            /*
-               if (y == 0 && x < 16) {
-               //0x91 0x0E
-               GST_DEBUG_OBJECT (src, "0x%02X 0x%02X", bufin[0], bufin[1]);
-               }
-             */
-            uint8_t pix1 = pix16 >> 8;
-            uint8_t pix0 = pix16 & 0xFF;
-            unsigned colori = x % 4;
-            // blue
-            if (colori == 1) {
-                bufout[6] = pix0;
-                bufout[7] = pix1;
-                // red
-            } else if (colori == 3) {
-                bufout[2] = pix0;
-                bufout[3] = pix1;
-                // green
-            } else {
-                bufout[4] = pix0;
-                bufout[5] = pix1;
-            }
-            bufin += 2;
-            bufout += 8;
+    for (unsigned x = 0; x < n; ++x) {
+        row[x] <<= shift;
+    }
+}
+
+// SDK RGB48 (packed, 16 bits / channel) to gstreamer ARGB64 (host endian)
+static void RGB48_to_ARGB64(GstToupCamSrc *src, const unsigned char *bufin,
+                            unsigned in_stride, unsigned char *bufout,
+                            unsigned out_stride)
+{
+    const unsigned shift = src->shift16;
+    for (unsigned y = 0; y < (unsigned) src->nHeight; ++y) {
+        const uint16_t *in = (const uint16_t *) (bufin + (gsize) y * in_stride);
+        uint16_t *out = (uint16_t *) (bufout + (gsize) y * out_stride);
+        for (unsigned x = 0; x < (unsigned) src->nWidth; ++x) {
+            // A R G B
+            out[0] = 0xFFFF;
+            out[1] = in[0] << shift;
+            out[2] = in[1] << shift;
+            out[3] = in[2] << shift;
+            in += 3;
+            out += 4;
         }
     }
 }
 
-// high def to common format
-void RGB48_to_ARGB64_x4(GstToupCamSrc * src, const unsigned char *bufin,
-                        unsigned char *bufout)
-{
-    for (unsigned y = 0; y < src->nHeight; ++y) {
-        for (unsigned x = 0; x < src->nWidth; ++x) {
-            uint16_t rpix16 = (bufin[1] << 12) | (bufin[0] << 4);
-            bufin += 2;
-            uint16_t gpix16 = (bufin[1] << 12) | (bufin[0] << 4);
-            bufin += 2;
-            uint16_t bpix16 = (bufin[1] << 12) | (bufin[0] << 4);
-            bufin += 2;
-            /*
-               if (y == 0 && x < 16) {
-               //0x91 0x0E
-               GST_DEBUG_OBJECT (src, "0x%02X 0x%02X", bufin[0], bufin[1]);
-               }
-             */
-            uint8_t rpix1 = rpix16 >> 8;
-            uint8_t rpix0 = rpix16 & 0xFF;
-            uint8_t gpix1 = gpix16 >> 8;
-            uint8_t gpix0 = gpix16 & 0xFF;
-            uint8_t bpix1 = bpix16 >> 8;
-            uint8_t bpix0 = bpix16 & 0xFF;
-            // red
-            bufout[2] = rpix0;
-            bufout[3] = rpix1;
-            // green
-            bufout[4] = gpix0;
-            bufout[5] = gpix1;
-            // blue
-            bufout[6] = bpix0;
-            bufout[7] = bpix1;
-            bufout += 8;
-        }
-    }
-}
-
-static GstFlowReturn wait_new_frame(GstToupCamSrc * src)
+static GstFlowReturn wait_new_frame(GstToupCamSrc *src)
 {
     //printf("Waiting for new frame...\n");
     // Wait for the next image to be ready
@@ -1545,102 +1786,123 @@ static GstFlowReturn wait_new_frame(GstToupCamSrc * src)
     return GST_FLOW_OK;
 }
 
-static GstFlowReturn pull_decode_frame(GstToupCamSrc * src,
-                                       GstBuffer * buf)
+/*
+Pull a frame from the SDK into dst with the given row pitch
+The SDK's default pitch is rows padded to 4 bytes, same as gstreamer's
+for the formats we use, so normally the plain PullImageV2 is used
+(byte identical to historical behavior). Fall back to the explicit
+row pitch variant if they ever differ
+*/
+static HRESULT pull_image(GstToupCamSrc *src, void *dst, int bits,
+                          unsigned pitch, camsdk(FrameInfoV2) * info)
 {
-    /*
-       Max size is RGBA 16 bit => 8 bytes per pixel
-       FIXME: size this dynamically
-       For now just make it really big
-       Largest supported camera is E3ISPM25000KPA @ 25MP
-     */
-    static unsigned char raw_buff[4928 * 4928 * 4 * 2];
-    // Copy image to buffer in the right way
-    GstMapInfo minfo;
+    unsigned default_pitch =
+        ((src->nWidth * src->bytes_per_pix_in * 8 + 31) & ~31) / 8;
+    if (pitch == default_pitch) {
+        return camsdk_(PullImageV2) (src->hCam, dst, bits, info);
+    }
+    GST_DEBUG_OBJECT(src, "non-default pitch %u (default %u)", pitch,
+                     default_pitch);
+    return camsdk_(PullImageWithRowPitchV2) (src->hCam, dst, bits, pitch,
+                                             info);
+}
 
-    // minfo size 4096, maxsize 4103, flags 0x00000002
+static GstFlowReturn pull_decode_frame(GstToupCamSrc *src, GstBuffer *buf)
+{
+    GstMapInfo minfo;
+    GstVideoFormat format = GST_VIDEO_INFO_FORMAT(&src->vinfo);
+    const unsigned stride = GST_VIDEO_INFO_PLANE_STRIDE(&src->vinfo, 0);
+    HRESULT hr;
+
+    if (format == GST_VIDEO_FORMAT_UNKNOWN || !src->streaming) {
+        GST_ERROR_OBJECT(src, "not negotiated");
+        return GST_FLOW_NOT_NEGOTIATED;
+    }
+
     gst_buffer_map(buf, &minfo, GST_MAP_WRITE);
     GST_DEBUG_OBJECT(src,
                      "minfo size %" G_GSIZE_FORMAT ", maxsize %"
                      G_GSIZE_FORMAT ", flags 0x%08X", minfo.size,
                      minfo.maxsize, minfo.flags);
-    // XXX: debugging crash
-    if (minfo.size != src->image_bytes_out) {
+    if (minfo.size < src->vinfo.size) {
         gst_buffer_unmap(buf, &minfo);
         GST_ERROR_OBJECT(src,
-                         "bad minfo size. Expect %d, got %" G_GSIZE_FORMAT,
-                         src->image_bytes_out, minfo.size);
+                         "bad minfo size. Expect %" G_GSIZE_FORMAT
+                         ", got %" G_GSIZE_FORMAT, src->vinfo.size,
+                         minfo.size);
         return GST_FLOW_ERROR;
     }
 
     camsdk(FrameInfoV2) info = { 0 };
-    if (src->raw) {
+    switch (format) {
+    case GST_VIDEO_FORMAT_ARGB64:
         /*
-           RGBA, 16 bit => 4 * 2 => 64 bit
-           Source data raw => densely packed into 16 bit areas
+           SDK gives packed RGB48
+           Expand to ARGB64 w/ left aligned samples
          */
-
-        if (sizeof(raw_buff) < src->image_bytes_in) {
-            gst_buffer_unmap(buf, &minfo);
-            GST_ERROR_OBJECT(src,
-                             "insufficient frame buffer size. Need %d, got %d",
-                             src->image_bytes_in, src->image_bytes_in);
-            return GST_FLOW_ERROR;
-        }
-
-        // From the grabber source we get 1 progressive frame
-        GST_DEBUG_OBJECT(src, "pulling raw image");
-        HRESULT hr = camsdk_(PullImageV2) (src->hCam, &raw_buff, 0, &info);
+        GST_DEBUG_OBJECT(src, "pulling RGB48 image");
+        hr = pull_image(src, src->scratch, src->sdk_bits,
+                        src->scratch_pitch, &info);
         if (FAILED(hr)) {
             GST_ERROR_OBJECT(src, "failed to pull image, hr = %08x", hr);
             gst_buffer_unmap(buf, &minfo);
             return GST_FLOW_ERROR;
         }
-
         GST_DEBUG_OBJECT(src, "decoding image");
-        GBRG12_to_ARGB64_x4(src, raw_buff, minfo.data);
-        // memset(minfo.data, 0x80, src->nWidth * src->nHeight * 7);
-#if 0
-        {
-            FILE *fp;
+        RGB48_to_ARGB64(src, src->scratch, src->scratch_pitch, minfo.data,
+                        stride);
+        break;
 
-            fp = fopen("raw.bin", "wb");
-            fwrite(minfo.data, 1, src->image_bytes_out, fp);
-            fclose(fp);
-        }
-#endif
-    } else if (src->x16) {
-        if (sizeof(raw_buff) < src->image_bytes_in) {
-            GST_ERROR_OBJECT(src,
-                             "insufficient frame buffer size. Need %d, got %d",
-                             src->image_bytes_in, src->image_bytes_in);
-            gst_buffer_unmap(buf, &minfo);
-            return GST_FLOW_ERROR;
-        }
-
-        GST_DEBUG_OBJECT(src, "pulling x16 image");
-        HRESULT hr =
-            camsdk_(PullImageV2) (src->hCam, &raw_buff, 48, &info);
+    case GST_VIDEO_FORMAT_GRAY16_LE:
+        /*
+           Sensor raw (bayer mosaic) or mono, 2 bytes / pixel
+           Pull directly into the gst buffer, then left align in place
+         */
+        GST_DEBUG_OBJECT(src, "pulling raw16 image");
+        hr = pull_image(src, minfo.data, src->sdk_bits, stride, &info);
         if (FAILED(hr)) {
             GST_ERROR_OBJECT(src, "failed to pull image, hr = %08x", hr);
             gst_buffer_unmap(buf, &minfo);
             return GST_FLOW_ERROR;
         }
+        if (src->shift16) {
+            for (unsigned y = 0; y < (unsigned) src->nHeight; ++y) {
+                shift16_row((uint16_t *) (minfo.data + (gsize) y * stride),
+                            src->nWidth, src->shift16);
+            }
+        }
+        break;
 
-        GST_DEBUG_OBJECT(src, "decoding image");
-        RGB48_to_ARGB64_x4(src, raw_buff, minfo.data);
-    } else {
-        GST_DEBUG_OBJECT(src, "pulling x8 image");
-        HRESULT hr =
-            camsdk_(PullImageV2) (src->hCam, minfo.data, 24, &info);
+    case GST_VIDEO_FORMAT_GRAY8:
+    case GST_VIDEO_FORMAT_RGB:
+        // Direct pull, no conversion
+        GST_DEBUG_OBJECT(src, "pulling %s image",
+                         gst_video_format_to_string(format));
+        hr = pull_image(src, minfo.data, src->sdk_bits, stride, &info);
         if (FAILED(hr)) {
             GST_ERROR_OBJECT(src, "failed to pull image, hr = %08x", hr);
             gst_buffer_unmap(buf, &minfo);
             return GST_FLOW_ERROR;
         }
+        break;
+
+    default:
+        gst_buffer_unmap(buf, &minfo);
+        GST_ERROR_OBJECT(src, "unsupported format %s",
+                         gst_video_format_to_string(format));
+        return GST_FLOW_NOT_NEGOTIATED;
     }
 
     gst_buffer_unmap(buf, &minfo);
+
+    if (info.width && info.height
+        && (info.width != (unsigned) src->nWidth
+            || info.height != (unsigned) src->nHeight)) {
+        GST_WARNING_OBJECT(src,
+                           "frame %u x %u doesn't match negotiated %d x %d",
+                           info.width, info.height, src->nWidth,
+                           src->nHeight);
+    }
 
     src->imagesPulled += 1;
     /* After we get the image data, we can do anything for the data we want to do
@@ -1654,20 +1916,27 @@ static GstFlowReturn pull_decode_frame(GstToupCamSrc * src,
     return GST_FLOW_OK;
 }
 
-static GstFlowReturn gst_toupcam_src_alloc(GstPushSrc * psrc,
-                                           GstBuffer ** buf)
+static GstFlowReturn gst_toupcam_src_alloc(GstPushSrc *psrc,
+                                           GstBuffer **buf)
 {
     GstFlowReturn ret;
 
     GstToupCamSrc *src = GST_TOUPCAM_SRC(psrc);
 
-    *buf = gst_buffer_new_allocate(NULL, src->image_bytes_out, NULL);
-    if (G_UNLIKELY(*buf == NULL)) {
-        GST_DEBUG_OBJECT(src, "Failed to allocate %u bytes",
-                         src->image_bytes_out);
-        ret = GST_FLOW_ERROR;
+    if (GST_VIDEO_INFO_FORMAT(&src->vinfo) == GST_VIDEO_FORMAT_UNKNOWN) {
+        GST_ERROR_OBJECT(src, "alloc before negotiation");
+        return GST_FLOW_NOT_NEGOTIATED;
     }
-    ret = GST_FLOW_OK;
+
+    *buf = gst_buffer_new_allocate(NULL, src->vinfo.size, NULL);
+    if (G_UNLIKELY(*buf == NULL)) {
+        GST_ERROR_OBJECT(src,
+                         "Failed to allocate %" G_GSIZE_FORMAT " bytes",
+                         src->vinfo.size);
+        ret = GST_FLOW_ERROR;
+    } else {
+        ret = GST_FLOW_OK;
+    }
 
     return ret;
 }
@@ -1676,8 +1945,7 @@ static GstFlowReturn gst_toupcam_src_alloc(GstPushSrc * psrc,
 // buf is the buffer to fill, it may be allocated in alloc or from a downstream
 // element. Other functions such as deinterlace do not work with this type of
 // buffer.
-static GstFlowReturn gst_toupcam_src_fill(GstPushSrc * psrc,
-                                          GstBuffer * buf)
+static GstFlowReturn gst_toupcam_src_fill(GstPushSrc *psrc, GstBuffer *buf)
 {
     GstToupCamSrc *src = GST_TOUPCAM_SRC(psrc);
 

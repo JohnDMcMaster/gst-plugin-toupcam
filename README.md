@@ -187,6 +187,43 @@ Which will include something like (E3ISPM20000KPA):
           7.2 x 7.2 um
 ```
 
+## Pixel formats
+
+The output pixel format is selected through normal caps negotiation.
+If downstream doesn't care (ex: `toupcamsrc ! videoconvert ! xvimagesink`) 8 bit RGB is used,
+otherwise put a capsfilter after the source:
+
+```
+# 8 bit RGB from the camera ISP (default)
+gst-launch-1.0 toupcamsrc ! video/x-raw,format=RGB ! videoconvert ! xvimagesink
+# 16 bit RGB (SDK RGB48, left aligned into 16 bit samples)
+gst-launch-1.0 toupcamsrc ! video/x-raw,format=ARGB64 ! videoconvert ! xvimagesink
+# Sensor raw (bayer mosaic for color cameras), left aligned into 16 bit samples
+gst-launch-1.0 toupcamsrc ! video/x-raw,format=GRAY16_LE ! videoconvert ! xvimagesink
+# 8 bit sensor raw
+gst-launch-1.0 toupcamsrc ! video/x-raw,format=GRAY8 ! videoconvert ! xvimagesink
+# Save a 16 bit raw frame
+gst-launch-1.0 toupcamsrc num-buffers=1 ! video/x-raw,format=GRAY16_LE ! pngenc ! filesink location=raw.png
+```
+
+Notes:
+  * 16 bit formats are only advertised if the camera reports a max bit depth > 8
+  * Samples are left aligned: a 12 bit sensor gives 0x0000 to 0xFFF0.
+    Read the `bit-depth` property for the number of significant bits
+  * Raw formats are not demosaiced, white balanced, etc.
+    `raw-format` is the SDK's `get_RawFormat()` FourCC verbatim (ex: "GBRG").
+    `mono` is set for sensors without a color filter array
+  * Caution: the SDK FourCC does not appear to describe the row-major layout of the delivered frame.
+    An E3ISPM20000KPA reports `GBRG` but the frame is `GRBG`
+    (ie the FourCC reads column-major / transposed; `RGGB` and `BGGR` would be unaffected).
+    Verify against an RGB frame before trusting it (pyuscope applies the transpose)
+  * The SDK `hflip` / `vflip` options do not apply to raw frames.
+    Use `videoflip` downstream if the orientation must match the RGB formats
+  * The format can be changed while the pipeline is running by changing the capsfilter caps.
+    The camera is stopped, reconfigured, and restarted. Exposure etc are preserved
+  * Hue / saturation / brightness / contrast / gamma only apply to the RGB formats
+  * `GST_TOUPCAMSRC_INFO=Y` prints the negotiable formats (`Formats():`)
+
 
 # Development
 
@@ -243,7 +280,7 @@ These cameras can include:
 Quick refernece for cameras that developers are testing:
   * E3ISPM20000KPA
     * McMaster current camera
-    * 16 bit capture is partially supported
+    * 12 bit sensor. See "Pixel formats" for 16 bit / raw capture
   * MU800
     * McMaster original camera
 
@@ -279,3 +316,12 @@ Quick refernece for cameras that developers are testing:
 
 0.6.0
  * Debian package build and release tooling
+
+0.7.0
+ * Pixel format (8 bit RGB, 16 bit RGB, 8/16 bit sensor raw) selected by caps negotiation
+   * Replaces the compile time raw / x16 PoC
+   * Format can be switched at runtime (camera is stopped + restarted)
+ * Raw output is now the unmodified mosaic (GRAY8 / GRAY16_LE). Demosaic downstream
+ * Add bit-depth, raw-format, mono properties
+ * GST_TOUPCAMSRC_INFO: add Formats()
+ * Buffer sizes derived from negotiated caps. Remove 190 MB static frame buffer

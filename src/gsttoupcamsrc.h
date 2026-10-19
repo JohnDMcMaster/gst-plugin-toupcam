@@ -9,6 +9,7 @@
 #define _GST_TOUPCAM_SRC_H_
 
 #include <gst/base/gstpushsrc.h>
+#include <gst/video/video.h>
 
 /*
 ToupTek Photonics SDK gets rebranded to a few other things
@@ -98,20 +99,37 @@ struct _GstToupCamSrc {
        typedef struct Nncam_t { int unused; } *HNncam;
      */
     CAMSDK_HANDLE hCam;         // device handle
-    gboolean raw;
-    gboolean x16;
     gint esize;
     gint nWidth;
     gint nHeight;
-    gint image_bytes_in;
-    gint bytes_per_pix_in;
-    gint bits_per_pix_out;
-    gint bytes_per_pix_out;
-    gint image_bytes_out;
     gint m_total;
-    gint gst_stride;            // Stride/pitch for the GStreamer buffer
 
-    unsigned char *frame_buff;
+    /*
+       Output pixel format
+       Negotiated via caps (see gst_toupcam_src_set_caps)
+       The camera is (re)configured + (re)started whenever this changes
+     */
+    // Negotiated output video info. GST_VIDEO_FORMAT_UNKNOWN until set_caps
+    GstVideoInfo vinfo;
+    // Is StartPullMode active?
+    gboolean streaming;
+    // Camera capabilities (valid once hCam is open)
+    gint max_bit_depth;
+    gboolean mono;
+    // Current mode info
+    // Significant bits in each sample for the current mode (ex: 8, 12)
+    gint sensor_bits;
+    // "bits" argument to PullImageV2 for the current mode
+    gint sdk_bits;
+    // Shift to left align sensor_bits samples into 16 bit container
+    gint shift16;
+    // Bytes/pixel as pulled from the SDK (before any conversion)
+    gint bytes_per_pix_in;
+    // Scratch buffer for modes that need a conversion step (ex: RGB48 => ARGB64)
+    unsigned char *scratch;
+    gsize scratch_size;
+    // Row pitch of the scratch buffer
+    unsigned scratch_pitch;
 
     // gst properties
     gdouble framerate;

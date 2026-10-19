@@ -130,7 +130,7 @@ Build only the GStreamer plugin package:
 
 The plugin package version and filename include the build distribution from
 `/etc/os-release`, for example
-`gstreamer1.0-toupcam_0.5.0+ubuntu20.04_amd64.deb`. Use
+`gstreamer1.0-toupcam_0.6.0+ubuntu20.04_amd64.deb`. Use
 `--distribution-tag` to override automatic detection when building in a
 custom environment. The package metadata records and requires the exact
 Toupcam SDK version used for the build.
@@ -276,3 +276,6 @@ Quick refernece for cameras that developers are testing:
 
 0.5.0
  * Significant properties added (in lieu of expanding GST_TOUPCAMSRC_INFO hacks)
+
+0.6.0
+ * Debian package build and release tooling
